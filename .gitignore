@@ -1,5 +1,6 @@
 bin/
 build/icon/
+build/dist/
 build/screenshots/
 quota.db
 quota.db-*
