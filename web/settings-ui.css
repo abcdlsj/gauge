@@ -1162,3 +1162,42 @@ textarea.sx-input {
 }
 .sx-split .sx-confirm-bar { margin: 0; }
 .sx-confirm-btns { display: flex; gap: 6px; flex: none; }
+
+/* ---------- level 3: network ---------- */
+
+/* The route in effect, then the local proxies the last scan reached. */
+.sx-net {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px var(--sx-pad-x) 0;
+}
+.sx-net-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.sx-net-text[data-state="ok"] { color: var(--ok); }
+.sx-net-text[data-state="error"] { color: var(--danger); }
+.sx-net-found {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px var(--sx-pad-x) 0;
+}
+.sx-net-found-head {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.sx-net-found .sx-chip { font-variant-numeric: tabular-nums; }
+.sx-net-found .sx-chip i { font-style: normal; margin-left: 6px; color: var(--faint); }
+.sx-net-found .sx-chip:hover i { color: var(--accent); }

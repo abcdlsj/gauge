@@ -44,12 +44,15 @@ type pendingAuth struct {
 
 const oauthStateTTL = 10 * time.Minute
 
-func newOAuthBroker(st *store.Store, eng *engine.Engine, logger *log.Logger) *oauthBroker {
+// newOAuthBroker wires the consent flow. The client follows the proxy setting,
+// because the token endpoint is as unreachable as everything else in a network
+// that needs one.
+func newOAuthBroker(st *store.Store, eng *engine.Engine, proxy *providers.Proxy, logger *log.Logger) *oauthBroker {
 	return &oauthBroker{
 		store:   st,
 		engine:  eng,
 		log:     logger,
-		client:  &http.Client{Timeout: 20 * time.Second},
+		client:  proxy.Client(20 * time.Second),
 		pending: make(map[string]pendingAuth),
 	}
 }

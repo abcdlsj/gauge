@@ -11,7 +11,6 @@ import (
 	"hash/fnv"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -37,10 +36,12 @@ type Provider interface {
 }
 
 // Deps is the dependency bundle handed to every Collect call. It carries a
-// shared HTTP client (honouring HTTPS_PROXY) and a token cache.
+// shared HTTP client (routed by the proxy setting), the resolver behind it and
+// a token cache.
 type Deps struct {
 	Store  *store.Store
 	Client *http.Client
+	Proxy  *Proxy
 	Log    *log.Logger
 
 	mu         sync.Mutex
@@ -148,9 +149,11 @@ type cachedToken struct {
 
 // NewDeps builds the shared collector dependencies.
 func NewDeps(st *store.Store, logger *log.Logger) *Deps {
+	proxy := NewProxy(st)
 	d := &Deps{
 		Store:  st,
-		Client: NewHTTPClient(),
+		Proxy:  proxy,
+		Client: proxy.Client(30 * time.Second),
 		Log:    logger,
 		tokens: make(map[string]cachedToken),
 	}
@@ -177,24 +180,6 @@ func (d *Deps) BrowserCookies(ctx context.Context, domain string, names []string
 		return "", false
 	}
 	return header, true
-}
-
-// NewHTTPClient returns a client that respects HTTPS_PROXY / HTTP_PROXY /
-// NO_PROXY, which keeps egress in the same region as the operator.
-func NewHTTPClient() *http.Client {
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          32,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
-	return &http.Client{Transport: transport, Timeout: 30 * time.Second}
 }
 
 // Setting returns a stored setting, or "" when unset. Read errors are logged

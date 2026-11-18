@@ -68,8 +68,16 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		providers.OpenDesign{},
 	}, cfg.Logger)
 
-	s := &Server{store: st, engine: eng, log: cfg.Logger, start: time.Now(), onChange: cfg.OnSettingsChange}
-	broker := newOAuthBroker(st, eng, cfg.Logger)
+	s := &Server{
+		store:    st,
+		engine:   eng,
+		proxy:    deps.Proxy,
+		client:   deps.Proxy.Client(20 * time.Second),
+		log:      cfg.Logger,
+		start:    time.Now(),
+		onChange: cfg.OnSettingsChange,
+	}
+	broker := newOAuthBroker(st, eng, deps.Proxy, cfg.Logger)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/overview", s.handleOverview)
@@ -88,6 +96,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("POST /api/refresh-all", s.handleRefreshAll)
 	mux.HandleFunc("POST /api/refresh/{provider}", s.handleRefresh)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/proxy", s.handleProxy)
+	mux.HandleFunc("POST /api/proxy/test", s.handleProxyTest)
 	mux.HandleFunc("GET /api/avatar/{slot}", s.handleAvatar)
 	mux.HandleFunc("GET /api/oauth/start", broker.handleStart)
 	mux.HandleFunc("DELETE /api/accounts/{slot}", s.handleDeleteAccount)

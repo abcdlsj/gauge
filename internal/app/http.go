@@ -106,6 +106,7 @@ var settingSections = []sectionDef{
 	{
 		ID: "general", Title: "General", Providers: []string{},
 		Fields: []fieldDef{
+			{Key: providers.ProxySetting, Label: "Proxy", Kind: "proxy", Placeholder: "http://127.0.0.1:7890", Help: "Empty follows the environment or the macOS system proxy; used for every upstream request.", Optional: true},
 			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Help: "Receives JSON when a source changes state.", Sensitive: true, Optional: true},
 			// The settings UI draws this one as a picker in the Appearance group.
 			{Key: IconSetting, Label: "Icon", Kind: "select", Options: []string{IconGauge, IconClassic}, Default: IconGauge, Help: "Menu bar and window mark."},
@@ -243,6 +244,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 type Server struct {
 	store  *store.Store
 	engine *engine.Engine
+	proxy  *providers.Proxy
+	// client follows the proxy setting; used for avatar fetches and the proxy
+	// probe.
+	client *http.Client
 	log    *log.Logger
 	start  time.Time
 	// onChange is Config.OnSettingsChange.
@@ -451,6 +456,8 @@ func (a *Server) handleDisplay(w http.ResponseWriter, r *http.Request) {
 // validateField rejects values the collectors could not use.
 func validateField(f fieldDef, value string) error {
 	switch f.Kind {
+	case "proxy":
+		return providers.ValidateProxy(value)
 	case "number":
 		n, err := strconv.ParseFloat(value, 64)
 		if err != nil {
@@ -485,6 +492,10 @@ func (a *Server) afterSettingsChange(ctx context.Context, changed map[string]str
 	if _, ok := changed["flow_cookie"]; ok {
 		_ = a.store.Delete(ctx, "flow_auth_state")
 		_ = a.store.Delete(ctx, "flow_cookie_fp")
+	}
+	// A new route should be used by the next attempt, not fifteen seconds later.
+	if _, ok := changed[providers.ProxySetting]; ok && a.proxy != nil {
+		a.proxy.Invalidate()
 	}
 }
 
@@ -565,7 +576,10 @@ func (a *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		// content policy and App Transport Security both dislike a cross-origin
 		// image hop, so the avatar silently failed and fell back to initials.
 		if u, err := url.Parse(account.Picture); err == nil && u.Scheme == "https" && strings.HasSuffix(u.Hostname(), ".googleusercontent.com") {
-			client := &http.Client{Timeout: 5 * time.Second}
+			client := a.client
+			if client == nil {
+				client = &http.Client{Timeout: 5 * time.Second}
+			}
 			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
 			if err != nil {
 				break
@@ -588,6 +602,69 @@ func (a *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// handleProxy reports the route upstream requests take.
+func (a *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
+	cfg := resolveConfig(a.proxy, r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"config": cfg, "description": cfg.Describe()})
+}
+
+// proxyReport is the answer of POST /api/proxy/test: the route that is in
+// effect, whether it reaches Google, and any local proxies that do.
+type proxyReport struct {
+	Config     providers.ProxyConfig      `json:"config"`
+	OK         bool                       `json:"ok"`
+	LatencyMS  int64                      `json:"latency_ms"`
+	Error      string                     `json:"error,omitempty"`
+	Candidates []providers.ProxyCandidate `json:"candidates,omitempty"`
+}
+
+// handleProxyTest probes a proxy (body {"proxy": "..."}) or the effective route
+// and, in the same round trip, scans the usual local proxy ports. Scanning is
+// why the settings page fills the field with one click on a new machine.
+func (a *Server) handleProxyTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Proxy *string `json:"proxy"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body)
+	}
+
+	cfg := resolveConfig(a.proxy, r.Context())
+	if body.Proxy != nil {
+		raw := strings.TrimSpace(*body.Proxy)
+		if err := providers.ValidateProxy(raw); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		cfg = providers.ResolveProxy(raw)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	report := proxyReport{Config: cfg, Candidates: providers.DetectProxies(ctx)}
+	if latency, err := providers.Probe(ctx, cfg, 5*time.Second); err != nil {
+		report.Error = err.Error()
+	} else {
+		report.OK = true
+		report.LatencyMS = latency.Milliseconds()
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+// resolveConfig falls back to a fresh resolver when no store-backed one exists.
+func resolveConfig(p *providers.Proxy, ctx context.Context) providers.ProxyConfig {
+	if p == nil {
+		return providers.ResolveProxy("")
+	}
+	return p.Config(ctx)
 }
 
 // handleHealth is a cheap liveness probe that touches no upstream API.

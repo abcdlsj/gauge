@@ -100,6 +100,11 @@
       icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.65"/><path d="M9 3.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>',
       desc: 'Theme & menu bar mark',
     },
+    network: {
+      tint: 'var(--accent)',
+      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M3 9h12M9 3c1.8 2 2.6 3.9 2.6 6S10.8 13 9 15c-1.8-2-2.6-3.9-2.6-6S7.2 5 9 3Z"/></svg>',
+      desc: 'Proxy for upstream requests',
+    },
     webhook: {
       tint: 'var(--accent-2)',
       icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.5 7.6a3.5 3.5 0 0 1 7 0c0 2.4 1 3.5 1.5 4H4c.5-.5 1.5-1.6 1.5-4ZM7.6 13.7a1.5 1.5 0 0 0 2.8 0"/></svg>',
@@ -220,13 +225,14 @@
       }
       if (clean === 'general') return { kind: 'general', id: 'general', sub: null, depth: 1 };
       if (clean === 'general/webhook') return { kind: 'webhook', id: 'general', sub: 'webhook', depth: 2 };
+      if (clean === 'general/network') return { kind: 'network', id: 'general', sub: 'network', depth: 2 };
       const [id, sub] = clean.split('/');
       const sec = section(id);
       if (!sec) return null;
       if (sec.id === 'general') {
-        return sub === 'webhook'
-          ? { kind: 'webhook', id: 'general', sub: 'webhook', depth: 2 }
-          : { kind: 'general', id: 'general', sub: null, depth: 1 };
+        if (sub === 'webhook') return { kind: 'webhook', id: 'general', sub: 'webhook', depth: 2 };
+        if (sub === 'network') return { kind: 'network', id: 'general', sub: 'network', depth: 2 };
+        return { kind: 'general', id: 'general', sub: null, depth: 1 };
       }
       if (sub === 'connection' || sub === 'schedule') {
         return { kind: sub, id, sub, depth: 2 };
@@ -240,6 +246,7 @@
       if (r.kind === 'add-instance') return `add/${r.id}`;
       if (r.kind === 'general') return 'general';
       if (r.kind === 'webhook') return 'general/webhook';
+      if (r.kind === 'network') return 'general/network';
       if (r.kind === 'connection' || r.kind === 'schedule') return `${r.id}/${r.sub}`;
       return r.id || '';
     }
@@ -336,6 +343,7 @@
       }
       if (r.kind === 'general') return { depth: 1, title: 'General', parent: 'Settings', providers: [] };
       if (r.kind === 'webhook') return { depth: 2, title: 'Alert Webhook', parent: 'General', providers: [] };
+      if (r.kind === 'network') return { depth: 2, title: 'Network', parent: 'General', providers: [] };
       const sec = section(r.id);
       const secTitle = titleFor(sec, r.id) || r.id;
       const provs = providersForPage(sec, r.id);
@@ -700,6 +708,14 @@
               <span class="sx-pill ${webhookOn ? 'is-ok' : 'is-muted'}">${webhookOn ? 'Active' : 'Off'}</span>
               ${CHEVRON}
             </div>
+            <div class="sx-item" data-nav="general/network" role="button" tabindex="0"${curStr === 'general/network' ? ' aria-current="true"' : ''}>
+              ${sourceBadge('network', null, 'sm')}
+              <div class="sx-item-main">
+                <div class="sx-item-top"><b>Network</b></div>
+                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(proxySummary(genSec))}</span></div>
+              </div>
+              ${CHEVRON}
+            </div>
           </div>
         </section>
         <div class="sx-add-dock">
@@ -1045,7 +1061,27 @@
               ${CHEVRON}
             </div>
           </div>
+        </section>
+        <section class="sx-sec">
+          <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Network</span></div>
+          <div class="sx-list">
+            <div class="sx-item" data-nav="general/network" role="button" tabindex="0">
+              ${sourceBadge('network', null, 'sm')}
+              <div class="sx-item-main">
+                <div class="sx-item-top"><b>Proxy</b></div>
+                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(proxySummary(sec))}</span></div>
+              </div>
+              ${CHEVRON}
+            </div>
+          </div>
         </section>`;
+    }
+
+    // proxySummary names the route in one line for the General and index rows.
+    function proxySummary(sec) {
+      const f = sec && sec.fields.find((x) => x.key === 'proxy_url');
+      if (!f || !f.configured) return 'Automatic (system proxy)';
+      return f.value;
     }
 
     /* ---------- Level 3: Connection & Auth ---------- */
@@ -1334,6 +1370,105 @@
         </section>`;
     }
 
+    /* ---------- Level 3: Network (proxy) ---------- */
+
+    function renderNetwork(sec) {
+      const f = sec && sec.fields.find((x) => x.key === 'proxy_url');
+      const backBtn = layout === 'split'
+        ? `<button class="sx-back-crumb" type="button" data-nav="general">‹ General</button>` : '';
+      if (!f) return `${backBtn}<p class="sx-empty">Proxy setting unavailable.</p>`;
+      return `
+        ${backBtn}
+        <section class="sx-sec">
+          <p class="sx-lead">Every upstream request — Google, Command Code, Open Design — takes this route. Empty follows the environment, then the macOS system proxy, then a direct connection.</p>
+          <div class="sx-list">${renderField(f)}</div>
+          <div class="sx-form-actions">
+            <button class="sx-btn" type="button" data-proxy-test>Test request</button>
+            <button class="sx-btn primary" type="button" data-proxy-detect>Detect local proxy</button>
+          </div>
+        </section>
+        <section class="sx-sec">
+          <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Current route</span></div>
+          <div class="sx-net">
+            <span class="sx-pill is-muted" data-net-pill>Checking…</span>
+            <span class="sx-net-text" data-net-text></span>
+          </div>
+          <div class="sx-net-found" data-net-found hidden></div>
+          <p class="sx-hint">Calls to 127.0.0.1 (the Antigravity IDE) never use the proxy.</p>
+        </section>`;
+    }
+
+    // netStatus paints the saved route without touching the network.
+    async function netStatus() {
+      try {
+        const res = await api('/api/proxy');
+        paintNet(res.config);
+      } catch (err) {
+        paintNet(null, err.message);
+      }
+    }
+
+    function paintNet(cfg, error) {
+      const pill = root.querySelector('[data-net-pill]');
+      const text = root.querySelector('[data-net-text]');
+      if (!pill || !text) return;
+      if (!cfg) {
+        pill.className = 'sx-pill is-error';
+        pill.textContent = 'Unknown';
+        text.textContent = error || '';
+        return;
+      }
+      const origin = { setting: 'custom', environment: 'environment', system: 'system proxy' }[cfg.source];
+      if (cfg.url) {
+        pill.className = 'sx-pill is-ok';
+        pill.textContent = cfg.source === 'setting' ? 'Custom' : 'Automatic';
+        text.textContent = `${cfg.url}${origin && cfg.source !== 'setting' ? ` · ${origin}` : ''}`;
+      } else {
+        pill.className = 'sx-pill is-muted';
+        pill.textContent = 'Direct';
+        text.textContent = cfg.source === 'setting' ? 'proxy off' : 'no proxy configured';
+      }
+    }
+
+    // runProxyCheck probes the saved route (or what the field currently holds)
+    // and lists the local proxies that answered, so a new machine needs one
+    // click instead of a research session.
+    async function runProxyCheck() {
+      const input = root.querySelector('[data-text="proxy_url"]');
+      const proxy = input ? input.value.trim() : '';
+      const found = root.querySelector('[data-net-found]');
+      for (const b of root.querySelectorAll('[data-proxy-test], [data-proxy-detect]')) b.disabled = true;
+      try {
+        const res = await api('/api/proxy/test', { method: 'POST', body: JSON.stringify({ proxy }) });
+        paintNet(res.config);
+        const text = root.querySelector('[data-net-text]');
+        if (text) {
+          text.textContent = res.ok
+            ? `reached Google in ${Math.max(1, res.latency_ms)} ms`
+            : `failed — ${res.error || 'no answer'}`;
+          text.dataset.state = res.ok ? 'ok' : 'error';
+        }
+        if (found) {
+          const cands = res.candidates || [];
+          found.hidden = false;
+          found.innerHTML = cands.length
+            ? `<span class="sx-net-found-head">Local proxies</span>${cands.map((c) => `
+                <button class="sx-chip" type="button" data-proxy-use="${esc(c.url)}" aria-label="Use ${esc(c.url)}">
+                  ${esc(c.url.replace(/^http:\/\//, ''))}<i>${Math.max(1, c.latency_ms)} ms</i>
+                </button>`).join('')}`
+            : `<span class="sx-sub-dim">No local proxy answered on the usual ports (Clash, Surge, v2rayN).</span>`;
+        }
+      } catch (err) {
+        toast(err.message);
+        if (found) {
+          found.hidden = false;
+          found.innerHTML = `<span class="sx-sub-dim">${esc(err.message)}</span>`;
+        }
+      } finally {
+        for (const b of root.querySelectorAll('[data-proxy-test], [data-proxy-detect]')) b.disabled = false;
+      }
+    }
+
     /* ---------- main render ---------- */
 
     function renderDetailView(r) {
@@ -1344,6 +1479,7 @@
       if (!sec) return '';
       if (r.kind === 'general') return renderGeneral(sec);
       if (r.kind === 'webhook') return renderWebhook(sec);
+      if (r.kind === 'network') return renderNetwork(sec);
       if (r.kind === 'connection') return renderConnection(sec, r.id);
       if (r.kind === 'schedule') return renderSchedule(sec, r.id);
       return renderSection(sec, r.id);
@@ -1376,6 +1512,7 @@
         scroller.scrollTop = top;
       }
       if (opts.onRender) opts.onRender();
+      if (route && route.kind === 'network') netStatus();
     }
 
     /* ---------- persistence & layout ---------- */
@@ -1682,6 +1819,21 @@
           await reloadSection();
         } else {
           t.disabled = false;
+        }
+        return;
+      }
+      if ('proxyTest' in d || 'proxyDetect' in d) {
+        if (t.disabled) return;
+        const detecting = 'proxyDetect' in d;
+        t.textContent = detecting ? 'Detecting…' : 'Testing…';
+        await runProxyCheck();
+        if (t.isConnected) t.textContent = detecting ? 'Detect local proxy' : 'Test request';
+        return;
+      }
+      if (d.proxyUse) {
+        if (await save('proxy_url', d.proxyUse)) {
+          toast('Proxy set');
+          render();
         }
         return;
       }

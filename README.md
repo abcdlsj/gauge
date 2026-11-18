@@ -138,6 +138,15 @@ are often different accounts:
 | Antigravity | `antigravity_refresh_token` → `google_refresh_token` → `~/.gemini/oauth_creds.json` |
 | GCP | `gcp_sa_json` → ADC file → `gcp_refresh_token` → `google_refresh_token` |
 
+**Settings → General → Network** holds the proxy every upstream request takes.
+Empty means automatic: `HTTPS_PROXY` / `HTTP_PROXY`, then the macOS system proxy
+(so a Clash/Surge in "system proxy" mode works without any shell environment,
+which a Finder launch never has), then a direct connection. `off` forces a
+direct connection; anything else is a proxy URL (`http://127.0.0.1:7890`,
+`socks5://…`). **Detect local proxy** scans the usual loopback ports and lists
+the ones that reach Google; **Test request** checks the route you just saved.
+Loopback calls — the Antigravity IDE's language server — never use the proxy.
+
 Optional: `webhook_url` receives a JSON alert when a provider changes state;
 `browser_cookies` (default `chrome`) reuses the local Chrome profile instead of a
 pasted cookie.
@@ -219,6 +228,7 @@ web                index.html · app.css · app.js (no framework)
 
 Routes: `GET /api/overview`, `GET /api/quotas`, `GET|POST /api/settings`,
 `POST /api/refresh/{provider}` (60 s cooldown), `POST /api/refresh-all`,
-`GET /api/oauth/start`, `GET /oauth/callback`, `GET /api/health`.
+`GET /api/oauth/start`, `GET /oauth/callback`, `GET /api/proxy`,
+`POST /api/proxy/test`, `GET /api/health`.
 
 The page loads no third-party assets; the CSP is `default-src 'self'`.
