@@ -98,6 +98,8 @@ var settingSections = []sectionDef{
 		Fields: []fieldDef{
 			{Key: "browser_cookies", Label: "Read Google cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Used by Colab and Flow. One keychain prompt."},
 			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Help: "Receives JSON when a source changes state.", Sensitive: true, Optional: true},
+			// The settings UI draws this one as a picker in the Appearance group.
+			{Key: IconSetting, Label: "Icon", Kind: "select", Options: []string{IconGauge, IconClassic}, Default: IconGauge, Help: "Menu bar and window mark."},
 		},
 	},
 }
@@ -181,6 +183,8 @@ type Server struct {
 	engine *engine.Engine
 	log    *log.Logger
 	start  time.Time
+	// onChange is Config.OnSettingsChange.
+	onChange func(changed map[string]string)
 }
 
 // handleOverview returns the full dashboard payload.
@@ -304,6 +308,9 @@ func validateField(f fieldDef, value string) error {
 
 // afterSettingsChange makes new values usable right away.
 func (a *Server) afterSettingsChange(ctx context.Context, changed map[string]string) {
+	if a.onChange != nil {
+		a.onChange(changed)
+	}
 	// New credentials should be usable right away, not after the cooldown.
 	a.engine.ResetCooldown()
 	// A fresh cookie resumes a paused collector immediately.

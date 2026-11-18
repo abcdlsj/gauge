@@ -24,6 +24,19 @@ import (
 //go:embed assets/tray-template@2x.png
 var trayIcon []byte
 
+// trayClassicIcon is the alternative glyph, picked in Settings → General.
+//
+//go:embed assets/tray-classic-template@2x.png
+var trayClassicIcon []byte
+
+// trayIconFor returns the template glyph for an icon choice.
+func trayIconFor(choice string) []byte {
+	if app.NormalizeIcon(choice) == app.IconClassic {
+		return trayClassicIcon
+	}
+	return trayIcon
+}
+
 func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags|log.Lmsgprefix)
 
@@ -37,11 +50,19 @@ func main() {
 	}
 
 	ctx := context.Background()
+	// tray is created after the app; the settings hook only fires once the
+	// UI is running, by which time it is set.
+	var tray *application.SystemTray
 	a, err := app.New(ctx, app.Config{
 		DBPath:         filepath.Join(dataDir, "quota.db"),
 		KeyPath:        filepath.Join(dataDir, "gauge.key"),
 		Logger:         logger,
 		AllowEmbedding: true,
+		OnSettingsChange: func(changed map[string]string) {
+			if choice, ok := changed[app.IconSetting]; ok && tray != nil {
+				tray.SetTemplateIcon(trayIconFor(choice))
+			}
+		},
 	})
 	if err != nil {
 		logger.Fatalf("start: %v", err)
@@ -128,8 +149,8 @@ func main() {
 		e.Cancel()
 	})
 
-	tray := ui.SystemTray.New()
-	tray.SetTemplateIcon(trayIcon)
+	tray = ui.SystemTray.New()
+	tray.SetTemplateIcon(trayIconFor(a.Icon(ctx)))
 	tray.SetTooltip("Gauge")
 	tray.AttachWindow(popover).WindowOffset(6)
 

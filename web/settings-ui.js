@@ -55,6 +55,19 @@
 
   const THEMES = [['auto', 'System'], ['light', 'Light'], ['dark', 'Dark']];
 
+  // The icon setting is a server field like any other, but it is drawn as a
+  // thumbnail picker in Appearance instead of a row under Options.
+  const ICON_KEY = 'app_icon';
+  const ICON_LABELS = { gauge: 'Gauge', classic: 'Classic' };
+
+  // refreshMarks reloads every /mark.svg on the page (header, favicon) after
+  // the icon changes; the server picks the file, the query defeats caching.
+  function refreshMarks() {
+    const bust = `/mark.svg?v=${Date.now()}`;
+    document.querySelectorAll('img[src^="/mark.svg"]:not([data-icon-thumb])').forEach((img) => { img.src = bust; });
+    document.querySelectorAll('link[rel~="icon"][href^="/mark.svg"]').forEach((link) => { link.href = bust; });
+  }
+
   function create(opts) {
     const root = opts.root;
     const toast = opts.toast || (() => {});
@@ -173,7 +186,7 @@
       if (sec.id === 'antigravity') parts.push(renderAccounts());
 
       // Sources split credentials from cadence; General keeps its own order.
-      const fields = sec.fields;
+      const fields = sec.fields.filter((f) => f.key !== ICON_KEY);
       const isSource = sec.providers.length > 0;
       const creds = isSource ? fields.filter((f) => f.kind === 'secret' || f.kind === 'text' || (f.kind === 'number' && !f.unit)) : fields;
       const prefs = fields.filter((f) => !creds.includes(f));
@@ -191,7 +204,7 @@
             <div class="sx-card">${prefs.map(renderField).join('')}</div>
           </div>`);
       }
-      if (sec.id === 'general') parts.push(renderAppearance());
+      if (sec.id === 'general') parts.push(renderAppearance(sec.fields.find((f) => f.key === ICON_KEY)));
       if (opts.extraSection) parts.push(opts.extraSection(sec, overview) || '');
       return parts.join('');
     }
@@ -239,8 +252,17 @@
         </div>`;
     }
 
-    function renderAppearance() {
+    function renderAppearance(icon) {
       const theme = localStorage.getItem('gauge-theme') || 'auto';
+      const iconRow = icon ? `
+            <div class="sx-row" data-key="${esc(icon.key)}">
+              ${labelBlock(icon)}
+              <span class="sx-icons" role="radiogroup" aria-label="${esc(icon.label)}">${(icon.options || []).map((o) => `
+                <button class="sx-icon" type="button" role="radio" data-icon-choice="${esc(o)}" aria-checked="${o === icon.value}">
+                  <img data-icon-thumb src="/mark.svg?icon=${encodeURIComponent(o)}" width="28" height="28" alt="" />
+                  <span>${esc(ICON_LABELS[o] || o)}</span>
+                </button>`).join('')}</span>
+            </div>` : '';
       return `
         <div class="sx-group">
           <h3 class="sx-caption">Appearance</h3>
@@ -249,7 +271,7 @@
               <span class="sx-label"><b>Theme</b></span>
               <span class="sx-seg" role="radiogroup">${THEMES.map(([v, l]) =>
                 `<button type="button" role="radio" data-theme-choice="${v}" aria-checked="${v === theme}">${l}</button>`).join('')}</span>
-            </div>
+            </div>${iconRow}
           </div>
         </div>`;
     }
@@ -420,6 +442,14 @@
         localStorage.setItem('gauge-theme', theme);
         if (opts.onTheme) opts.onTheme(theme);
         root.querySelectorAll('[data-theme-choice]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeChoice === theme)));
+        return;
+      }
+      if (d.iconChoice) {
+        if (t.getAttribute('aria-checked') === 'true') return;
+        if (await save(ICON_KEY, d.iconChoice)) {
+          root.querySelectorAll('[data-icon-choice]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
+          refreshMarks();
+        }
         return;
       }
       if (d.select) {

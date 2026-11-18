@@ -25,6 +25,10 @@ type Config struct {
 	// AllowEmbedding relaxes frame protection for the desktop shell, which
 	// renders the panel inside the app window.
 	AllowEmbedding bool
+	// OnSettingsChange, when set, runs after settings are saved or cleared.
+	// changed maps each key to its new value; "" means it was cleared and is
+	// back to its default.
+	OnSettingsChange func(changed map[string]string)
 }
 
 // App owns the long-lived pieces. Close it when the process exits.
@@ -62,7 +66,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		providers.GoogleFlow{},
 	}, cfg.Logger)
 
-	s := &Server{store: st, engine: eng, log: cfg.Logger, start: time.Now()}
+	s := &Server{store: st, engine: eng, log: cfg.Logger, start: time.Now(), onChange: cfg.OnSettingsChange}
 	broker := newOAuthBroker(st, eng, cfg.Logger)
 
 	mux := http.NewServeMux()
@@ -85,6 +89,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("GET /api/oauth/start", broker.handleStart)
 	mux.HandleFunc("DELETE /api/accounts/{slot}", s.handleDeleteAccount)
 	mux.HandleFunc("GET /oauth/callback", broker.handleCallback)
+	mux.HandleFunc("GET /mark.svg", s.handleMark)
 	mux.HandleFunc("GET /popover", func(w http.ResponseWriter, r *http.Request) {
 		raw, err := web.FS.ReadFile("popover.html")
 		if err != nil {

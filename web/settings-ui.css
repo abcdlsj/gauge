@@ -239,6 +239,33 @@ textarea.sx-input { resize: vertical; min-height: 72px; font-family: ui-monospac
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
+/* ---------- icon picker ---------- */
+
+.sx-icons { flex: none; display: inline-flex; gap: 8px; }
+.sx-icon {
+  font: inherit;
+  font-size: var(--sx-fs-sm);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 7px 10px 5px;
+  min-width: 64px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--sx-field);
+  color: var(--muted);
+  cursor: pointer;
+}
+.sx-icon img { display: block; }
+.sx-icon[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 550;
+}
+.sx-icon:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+
 /* ---------- status card ---------- */
 
 .sx-status { padding: var(--sx-pad-y) var(--sx-pad-x); display: flex; flex-direction: column; gap: 6px; }
