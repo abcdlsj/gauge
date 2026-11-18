@@ -4,14 +4,17 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gpanel ./cmd/gpanel
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gauge ./cmd/gauge-server
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/gpanel /gpanel
+COPY --from=build /out/gauge /gauge
 WORKDIR /data
 VOLUME ["/data"]
 EXPOSE 8090
-ENV GPANEL_ADDR=0.0.0.0:8090 \
-    GPANEL_DB=/data/quota.db \
-    GPANEL_KEY=/data/gpanel.key
-ENTRYPOINT ["/gpanel"]
+# The container has to bind a public address; keep it behind a reverse proxy or
+# set GAUGE_AUTH=user:password.
+ENV GAUGE_ADDR=0.0.0.0:8090 \
+    GAUGE_DB=/data/quota.db \
+    GAUGE_KEY=/data/gauge.key \
+    GAUGE_ALLOW_PUBLIC=1
+ENTRYPOINT ["/gauge"]

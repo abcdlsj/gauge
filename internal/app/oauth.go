@@ -271,7 +271,7 @@ func renderCallback(w http.ResponseWriter, ok bool, message string) {
 	}
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GPanel · %s</title>
+<title>Gauge · %s</title>
 <meta http-equiv="refresh" content="2;url=/#settings">
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f7f4;color:#17191d;

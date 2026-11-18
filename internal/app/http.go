@@ -155,7 +155,7 @@ func requireBasicAuth(next http.Handler, user, pass string) http.Handler {
 		u, p, ok := r.BasicAuth()
 		got := u + "\x00" + p
 		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="GPanel", charset="UTF-8"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="Gauge", charset="UTF-8"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

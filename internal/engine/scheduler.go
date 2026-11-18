@@ -389,7 +389,7 @@ func (e *Engine) notifyWebhook(ctx context.Context, provider, message string) {
 		return
 	}
 	payload := map[string]string{
-		"text":     "GPanel · " + provider + ": " + message,
+		"text":     "Gauge · " + provider + ": " + message,
 		"provider": provider,
 		"message":  message,
 		"source":   "gauge",
