@@ -297,7 +297,6 @@ const settingsUI = GaugeSettings.create({
     const m = typeof meta === 'string' ? { title: meta || 'Settings', depth: meta ? 1 : 0 } : (meta || { depth: 0, title: 'Settings' });
     const eyebrow = $('#settings-eyebrow');
     const title = $('#settings-title');
-    const addBtn = $('#settings-add');
     const themeBtn = $('#settings-theme');
     const refreshBtn = $('#settings-refresh');
     const homeBtn = $('#settings-home');
@@ -312,7 +311,6 @@ const settingsUI = GaugeSettings.create({
       eyebrow.hidden = true;
     }
     const atRoot = !m.depth;
-    addBtn.hidden = !atRoot;
     themeBtn.hidden = !atRoot;
     homeBtn.hidden = atRoot;
     refreshBtn.hidden = !(m.providers && m.providers.length);
@@ -359,7 +357,6 @@ $('#close-settings').addEventListener('click', () => {
   if (!settingsUI.back()) closeSettings();
 });
 $('#settings-eyebrow').addEventListener('click', () => settingsUI.back());
-$('#settings-add').addEventListener('click', () => settingsUI.open('add'));
 $('#settings-theme').addEventListener('click', () => {
   cycleTheme();
   settingsUI.reload();

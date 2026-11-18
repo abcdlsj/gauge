@@ -656,15 +656,7 @@
           </div>`;
       }).join('');
 
-      const addRow = `
-        <div class="sx-item sx-item-action" data-nav="add" role="button" tabindex="0"${curStr === 'add' || (route && route.kind === 'add-instance') ? ' aria-current="true"' : ''}>
-          <span class="sx-badge sx-badge-sm sx-badge-add">+</span>
-          <div class="sx-item-main">
-            <div class="sx-item-top"><b>Add subscription</b></div>
-            <div class="sx-item-sub"><span class="sx-sub-dim">Google AI, Command Code, Open Design, GCP</span></div>
-          </div>
-          ${CHEVRON}
-        </div>`;
+      const isAddActive = curStr === 'add' || Boolean(route && route.kind === 'add-instance');
 
       const genSec = section('general');
       const theme = localStorage.getItem('gauge-theme') || 'auto';
@@ -683,7 +675,6 @@
           <div class="sx-list sx-sortlist" data-sort="groups">
             ${groupRows}
           </div>
-          <div class="sx-list sx-list-tail">${addRow}</div>
           <p class="sx-hint">Drag grip to reorder · Switch toggles home visibility</p>
         </section>
         <section class="sx-sec">
@@ -710,7 +701,21 @@
               ${CHEVRON}
             </div>
           </div>
-        </section>`;
+        </section>
+        <div class="sx-add-dock">
+          <button class="sx-add-cta" type="button" data-nav="add"${isAddActive ? ' aria-current="true"' : ''}>
+            <span class="sx-add-cta-icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13">
+                <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M8 3.2v9.6M3.2 8h9.6"/>
+              </svg>
+            </span>
+            <span class="sx-add-cta-text">
+              <b>Add subscription</b>
+              <span>Google AI · Command Code · Open Design · GCP</span>
+            </span>
+            ${CHEVRON}
+          </button>
+        </div>`;
     }
 
     /* ---------- Level 2: Subscription Detail ---------- */
@@ -1785,7 +1790,7 @@
         commitOrder(row.parentElement, row.dataset.sortId);
         return;
       }
-      if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-nav]')) {
+      if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-nav]') && t.tagName !== 'BUTTON') {
         e.preventDefault();
         t.click();
         return;
