@@ -3,10 +3,13 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/abcdlsj/gauge/internal/model"
@@ -29,13 +32,13 @@ func (CommandCode) Title() string           { return "Command Code" }
 func (CommandCode) Interval() time.Duration { return 5 * time.Minute }
 
 func (CommandCode) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
-	key, user := commandCodeKey(ctx, d)
+	key, user, from := commandCodeKey(ctx, d)
 	if key == "" {
 		return nil, fmt.Errorf("%w: sign in with the Command Code CLI or paste an API key", ErrNotConfigured)
 	}
 	body, err := getBearerJSON(ctx, d, d.SettingDefault(ctx, "commandcode_endpoint", commandCodeCreditsURL), key)
 	if err != nil {
-		return nil, err
+		return nil, keySourceHint(err, from, "paste a current API key in settings or sign in again with the Command Code CLI")
 	}
 	snaps, err := parseCommandCode(body)
 	if err != nil {
@@ -47,40 +50,50 @@ func (CommandCode) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 	return snaps, nil
 }
 
-// commandCodeKey prefers a pasted key, then the Command Code CLI's own sign-in.
-func commandCodeKey(ctx context.Context, d *Deps) (key, user string) {
+// commandCodeKey prefers a pasted key, then the Command Code CLI's own
+// sign-in. from names where the key came from, for error messages.
+func commandCodeKey(ctx context.Context, d *Deps) (key, user, from string) {
 	if v := d.Setting(ctx, "commandcode_api_key"); v != "" {
-		return v, ""
+		return v, "", "the pasted API key"
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	raw, err := os.ReadFile(filepath.Join(home, ".commandcode", "auth.json"))
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	var auth struct {
 		APIKey   string `json:"apiKey"`
 		UserName string `json:"userName"`
 	}
 	if json.Unmarshal(raw, &auth) != nil {
-		return "", ""
+		return "", "", ""
 	}
-	return auth.APIKey, auth.UserName
+	return auth.APIKey, auth.UserName, "~/.commandcode/auth.json"
+}
+
+// keySourceHint says which credential was rejected, so a stale CLI sign-in
+// is not mistaken for a broken collector.
+func keySourceHint(err error, from, fix string) error {
+	if errors.Is(err, ErrExpiredAuth) && from != "" {
+		return fmt.Errorf("%w (key from %s; %s)", err, from, fix)
+	}
+	return err
 }
 
 type ccWindow struct {
-	Used    float64 `json:"used"`
-	Cap     float64 `json:"cap"`
-	ResetAt float64 `json:"resetAt"`
+	Used    flexFloat `json:"used"`
+	Cap     flexFloat `json:"cap"`
+	ResetAt flexFloat `json:"resetAt"`
 }
 
 func parseCommandCode(body []byte) ([]model.Snapshot, error) {
 	var reply struct {
 		Credits struct {
-			Monthly   *float64 `json:"monthlyCredits"`
-			Purchased *float64 `json:"purchasedCredits"`
+			Monthly   *flexFloat `json:"monthlyCredits"`
+			Purchased *flexFloat `json:"purchasedCredits"`
 		} `json:"credits"`
 		Windows struct {
 			FiveHour *ccWindow `json:"fiveHour"`
@@ -99,7 +112,7 @@ func parseCommandCode(body []byte) ([]model.Snapshot, error) {
 		if w.win == nil || w.win.Cap <= 0 {
 			continue
 		}
-		s := model.Series{Label: w.label, Remaining: percentLeft(w.win.Used, w.win.Cap), Total: 100, Unit: "%"}
+		s := model.Series{Label: w.label, Remaining: percentLeft(float64(w.win.Used), float64(w.win.Cap)), Total: 100, Unit: "%"}
 		if w.win.ResetAt > 0 {
 			t := time.UnixMilli(int64(w.win.ResetAt)).UTC()
 			s.ResetAt = &t
@@ -114,10 +127,10 @@ func parseCommandCode(body []byte) ([]model.Snapshot, error) {
 	if reply.Credits.Monthly != nil || reply.Credits.Purchased != nil {
 		var total float64
 		if reply.Credits.Monthly != nil {
-			total += *reply.Credits.Monthly
+			total += float64(*reply.Credits.Monthly)
 		}
 		if reply.Credits.Purchased != nil {
-			total += *reply.Credits.Purchased
+			total += float64(*reply.Credits.Purchased)
 		}
 		out = append(out, model.Snapshot{
 			Provider: "commandcode", Metric: "credits", Label: "Credits",
@@ -128,6 +141,24 @@ func parseCommandCode(body []byte) ([]model.Snapshot, error) {
 		return nil, fmt.Errorf("commandcode: the key has no plan windows (pay-as-you-go keys are not supported)")
 	}
 	return out, nil
+}
+
+// flexFloat decodes a number sent either as JSON number or as a string
+// ("0.993"); empty strings and null read as zero.
+type flexFloat float64
+
+func (f *flexFloat) UnmarshalJSON(b []byte) error {
+	raw := strings.Trim(string(b), `"`)
+	if raw == "" || raw == "null" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return fmt.Errorf("not a number: %s", b)
+	}
+	*f = flexFloat(v)
+	return nil
 }
 
 // percentLeft turns used/limit into the remaining percentage, clamped to 0–100.

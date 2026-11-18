@@ -29,15 +29,16 @@ func (OpenDesign) Title() string           { return "Open Design" }
 func (OpenDesign) Interval() time.Duration { return 5 * time.Minute }
 
 func (OpenDesign) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
-	key, user := openDesignKey(ctx, d)
+	key, user, from := openDesignKey(ctx, d)
 	if key == "" {
 		return nil, fmt.Errorf("%w: sign in with the Open Design CLI or paste a control key", ErrNotConfigured)
 	}
 	api := d.SettingDefault(ctx, "opendesign_api_url", openDesignAPI)
 
+	const fix = "paste a current control key in settings or sign in again with the Open Design CLI"
 	body, err := getBearerJSON(ctx, d, api+"/api/v1/workspaces/current", key)
 	if err != nil {
-		return nil, err
+		return nil, keySourceHint(err, from, fix)
 	}
 	var ws struct {
 		Active string `json:"activeWorkspaceId"`
@@ -53,7 +54,7 @@ func (OpenDesign) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error
 
 	body, err = getBearerJSON(ctx, d, api+"/api/v1/workspaces/"+url.PathEscape(id)+"/billing/preflight", key)
 	if err != nil {
-		return nil, err
+		return nil, keySourceHint(err, from, fix)
 	}
 	snaps, err := parseOpenDesign(body)
 	if err != nil {
@@ -67,17 +68,17 @@ func (OpenDesign) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error
 
 // openDesignKey prefers a pasted control key, then the Open Design CLI's
 // sign-in in ~/.amr/config.json (profile "prod").
-func openDesignKey(ctx context.Context, d *Deps) (key, user string) {
+func openDesignKey(ctx context.Context, d *Deps) (key, user, from string) {
 	if v := d.Setting(ctx, "opendesign_control_key"); v != "" {
-		return v, ""
+		return v, "", "the pasted control key"
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	raw, err := os.ReadFile(filepath.Join(home, ".amr", "config.json"))
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	var cfg struct {
 		Profiles map[string]struct {
@@ -88,21 +89,21 @@ func openDesignKey(ctx context.Context, d *Deps) (key, user string) {
 		} `json:"profiles"`
 	}
 	if json.Unmarshal(raw, &cfg) != nil {
-		return "", ""
+		return "", "", ""
 	}
 	p := cfg.Profiles["prod"]
-	return p.ControlKey, p.User.Email
+	return p.ControlKey, p.User.Email, "~/.amr/config.json"
 }
 
 func parseOpenDesign(body []byte) ([]model.Snapshot, error) {
 	var pre struct {
-		Balance    *float64 `json:"balanceUsd"`
+		Balance    *flexFloat `json:"balanceUsd"`
 		CodingPlan struct {
 			Windows []struct {
-				Duration float64 `json:"durationSeconds"`
-				Used     float64 `json:"usedCredits"`
-				Limit    float64 `json:"limitCredits"`
-				Resets   string  `json:"resetsAt"`
+				Duration flexFloat `json:"durationSeconds"`
+				Used     flexFloat `json:"usedCredits"`
+				Limit    flexFloat `json:"limitCredits"`
+				Resets   string    `json:"resetsAt"`
 			} `json:"windows"`
 		} `json:"codingPlan"`
 	}
@@ -117,7 +118,7 @@ func parseOpenDesign(body []byte) ([]model.Snapshot, error) {
 		}
 		s := model.Series{
 			Label:     spanLabel(time.Duration(w.Duration) * time.Second),
-			Remaining: percentLeft(w.Used, w.Limit),
+			Remaining: percentLeft(float64(w.Used), float64(w.Limit)),
 			Total:     100,
 			Unit:      "%",
 		}
@@ -135,7 +136,7 @@ func parseOpenDesign(body []byte) ([]model.Snapshot, error) {
 	if pre.Balance != nil {
 		out = append(out, model.Snapshot{
 			Provider: "opendesign", Metric: "balance", Label: "Balance",
-			Remaining: *pre.Balance, Unit: "USD", Status: model.StatusOK,
+			Remaining: float64(*pre.Balance), Unit: "USD", Status: model.StatusOK,
 		})
 	}
 	if len(out) == 0 {

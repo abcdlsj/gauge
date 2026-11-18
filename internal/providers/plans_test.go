@@ -54,3 +54,18 @@ func TestParseOpenDesign(t *testing.T) {
 		t.Fatalf("balance = %+v", snaps[1])
 	}
 }
+
+func TestParseOpenDesignStringNumbers(t *testing.T) {
+	body := []byte(`{"balanceUsd":"0.993","codingPlan":{"windows":[
+	  {"durationSeconds":"18000","usedCredits":"25","limitCredits":"100","resetsAt":"2026-11-18T07:46:41.123Z"}]}}`)
+	snaps, err := parseOpenDesign(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snaps[0].Series[0].Remaining != 75 || snaps[0].Series[0].ResetAt == nil {
+		t.Fatalf("window = %+v", snaps[0].Series[0])
+	}
+	if snaps[1].Remaining != 0.993 {
+		t.Fatalf("balance = %v", snaps[1].Remaining)
+	}
+}
