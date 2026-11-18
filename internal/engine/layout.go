@@ -200,15 +200,16 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 				mine = append(mine, q)
 			}
 			slices.SortStableFunc(mine, func(a, b model.Snapshot) int {
-				return rank(a.Metric) - rank(b.Metric)
+				return rank(metricBase(a.Metric)) - rank(metricBase(b.Metric))
 			})
 			for _, q := range mine {
 				id := q.Provider + "/" + q.Metric
-				label := itemLabels[id]
+				key := q.Provider + "/" + metricBase(q.Metric)
+				label := itemLabels[key]
 				if label == "" {
 					label = q.Label
 				}
-				list = append(list, LayoutItem{ID: id, Label: label, Provider: q.Provider, Metric: q.Metric, Account: q.Account, Hidden: !haveStored && defaults[id]})
+				list = append(list, LayoutItem{ID: id, Label: label, Provider: q.Provider, Metric: q.Metric, Account: q.Account, Hidden: !haveStored && defaults[key]})
 			}
 		}
 		cards[d.ID] = list
@@ -316,7 +317,7 @@ func orderedItems(cards []LayoutItem, stored []StoredItem, defaults map[string]b
 		if used[it.ID] {
 			continue
 		}
-		it.Hidden = defaults[it.ID]
+		it.Hidden = defaults[it.Provider+"/"+metricBase(it.Metric)]
 		out = append(out, it)
 	}
 	return out
@@ -403,6 +404,21 @@ func accountSlot(metric string) int {
 		return 1
 	}
 	return n
+}
+
+// metricBase strips the "@N" suffix collectors append for extra identities,
+// so a second account's cards get the same label, default visibility and order
+// as the primary account's: "gemini_models@2" still reads as "Antigravity ·
+// Gemini" and is still hidden by default when it is the catch-all pool.
+func metricBase(metric string) string {
+	i := strings.LastIndex(metric, "@")
+	if i < 0 {
+		return metric
+	}
+	if _, err := strconv.Atoi(metric[i+1:]); err != nil {
+		return metric
+	}
+	return metric[:i]
 }
 
 func rank(metric string) int {

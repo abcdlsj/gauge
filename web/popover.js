@@ -248,8 +248,11 @@ function staleTag(cards) {
 function bodyFor(cards) {
   const pools = cards.filter((c) => c.sn.series && c.sn.series.length).length;
   return cards.map(({ it, sn }) => (sn.series && sn.series.length
-    // A lone plan card needs no label under the subscription title.
-    ? renderPool(sn, pools > 1 || cards.length > 1 ? it.label : '')
+    // A lone plan card needs no label under the subscription title, but an
+    // Antigravity pool keeps its name even when it is the only card left: a
+    // second Google identity hides Flow and Colab, and dropping the label
+    // made its pool look unlike the same pool on the primary identity.
+    ? renderPool(sn, it.provider === 'antigravity' || pools > 1 || cards.length > 1 ? it.label : '')
     : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
 }
 

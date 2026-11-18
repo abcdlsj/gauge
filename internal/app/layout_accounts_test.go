@@ -21,6 +21,8 @@ func TestLayoutSplitsGoogleAccounts(t *testing.T) {
 	quotas := []model.Snapshot{
 		snap("gemini_models"),
 		snap("gemini_models@2"),
+		snap("claude_models@2"),
+		snap("other_models@2"),
 		{Provider: "colab", Metric: "compute_units", Label: "Colab", Status: "ok", UpdatedAt: time.Now()},
 	}
 	accounts := []model.Account{
@@ -44,8 +46,25 @@ func TestLayoutSplitsGoogleAccounts(t *testing.T) {
 	if got := itemIDs(g1); strings.Join(got, ",") != strings.Join(want1, ",") {
 		t.Fatalf("primary items = %v", got)
 	}
-	if got := itemIDs(g2); len(got) != 1 || got[0] != "antigravity/gemini_models@2" {
+	if got := itemIDs(g2); len(got) != 3 || got[0] != "antigravity/gemini_models@2" || got[1] != "antigravity/claude_models@2" {
 		t.Fatalf("second account items = %v", got)
+	}
+
+	// The collector's "@2" suffix must not defeat the label table, the default
+	// visibility or the metric order: a second identity has to read exactly
+	// like the primary one.
+	wantLabels := map[string]string{
+		"antigravity/gemini_models@2": "Antigravity · Gemini",
+		"antigravity/claude_models@2": "Antigravity · Claude & GPT",
+		"antigravity/other_models@2":  "Antigravity · other models",
+	}
+	for _, it := range g2.Items {
+		if want, ok := wantLabels[it.ID]; ok && it.Label != want {
+			t.Fatalf("%s label = %q, want %q", it.ID, it.Label, want)
+		}
+		if it.ID == "antigravity/other_models@2" && !it.Hidden {
+			t.Fatalf("%s should be hidden by default", it.ID)
+		}
 	}
 }
 
