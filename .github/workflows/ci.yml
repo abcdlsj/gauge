@@ -13,6 +13,8 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
     strategy:
       fail-fast: false
       matrix:
@@ -31,8 +33,11 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
-      - run: go vet ./...
-      - run: go test ./...
+      # The desktop shell needs cgo plus GTK/WebKit on Linux, which the ubuntu
+      # image has no headers for. The purego tag types-checks it everywhere;
+      # the app job below is what actually builds the Wails binary with cgo.
+      - run: go vet -tags purego ./...
+      - run: go test -tags purego ./...
 
   # The desktop app is macOS-only (menu bar popover, template icons, Chrome
   # cookie decryption through the macOS keychain). The headless server is pure
