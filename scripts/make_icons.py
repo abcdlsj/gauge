@@ -41,6 +41,10 @@ WEB = ROOT / "web"
 
 GRID = 22.0
 
+# The menu bar hands a template icon a 22pt box and adds no padding of its
+# own, so the tray glyph is inset a little instead of filling it edge to edge.
+TRAY_SCALE = 0.9
+
 # ---------------------------------------------------------------- primitives
 #
 # arc:  (kind, colour_key, cx, cy, radius, start_deg, end_deg, width, cap)
@@ -268,7 +272,11 @@ def mark_svg(name: str = "gauge", size: int = 32) -> str:
 
 def tray_svg(px: int, name: str = "gauge") -> str:
     """The menu-bar template: black on alpha, macOS recolours it."""
-    marks = _elements(name, px / GRID, 0, 0, lambda c: "#000000", lambda c: 1.0)
+    # Scaled about the mark's own centre (11,11 in grid units), so it shrinks
+    # in place rather than drifting up and left.
+    s = px * TRAY_SCALE / GRID
+    off = px * (1 - TRAY_SCALE) / 2
+    marks = _elements(name, s, off, off, lambda c: "#000000", lambda c: 1.0)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" viewBox="0 0 {px} {px}">
   {marks}
 </svg>
