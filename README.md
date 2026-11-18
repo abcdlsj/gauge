@@ -140,7 +140,7 @@ Optional: `webhook_url` receives a JSON alert when a provider changes state;
 `browser_cookies` (default `chrome`) reuses the local Chrome profile instead of a
 pasted cookie.
 
-Cards are grouped by subscription: **Gemini Ultra/Pro** (named after the
+Cards are grouped by subscription: **Google AI Ultra/Pro** (named after the
 account's plan) holds the Antigravity Gemini and Claude pools, Flow credits and
 Colab compute units; Command Code, Open Design and Google Cloud are groups of
 their own. In Settings, drag subscriptions (and the cards inside one) to set

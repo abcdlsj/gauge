@@ -45,7 +45,7 @@ def fixture_layout() -> list:
         return {"id": id_, "label": label, "provider": provider, "metric": metric, "hidden": hidden}
 
     return [
-        {"id": "google", "title": "Gemini Ultra", "detail": "Ultra 5x", "hidden": False,
+        {"id": "google", "title": "Google AI Ultra", "detail": "Ultra 5x", "hidden": False,
          "providers": ["antigravity", "google-flow", "colab"],
          "items": [
              item("antigravity/gemini_models", "Antigravity · Gemini"),

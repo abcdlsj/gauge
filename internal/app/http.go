@@ -57,7 +57,7 @@ func interval(provider, label string, def, floor int) fieldDef {
 var settingSections = []sectionDef{
 	{
 		// ID matches the layout group (internal/engine/layout.go): one page per
-		// subscription. The UI titles it after the plan ("Gemini Ultra").
+		// subscription. The UI titles it after the plan ("Google AI Ultra").
 		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
 		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{

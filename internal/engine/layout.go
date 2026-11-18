@@ -256,7 +256,9 @@ func rank(metric string) int {
 }
 
 // googleTitle names the Google group after the subscription of the primary
-// account: "Gemini Ultra", "Gemini Pro". Detail keeps the exact plan.
+// account: "Google AI Ultra", "Google AI Pro". Detail keeps the exact plan.
+// Google renamed Google One AI Premium to Google AI Pro/Ultra in 2025, so the
+// title follows Google's own product names rather than the Gemini model name.
 func googleTitle(accounts []model.Account) (title, detail string) {
 	if len(accounts) == 0 || accounts[0].Tier == "" {
 		return "Google AI", ""
@@ -265,11 +267,11 @@ func googleTitle(accounts []model.Account) (title, detail string) {
 	l := strings.ToLower(tier)
 	switch {
 	case strings.Contains(l, "ultra"):
-		return "Gemini Ultra", tier
+		return "Google AI Ultra", tier
 	case strings.Contains(l, "pro"):
-		return "Gemini Pro", tier
+		return "Google AI Pro", tier
 	case strings.Contains(l, "free"):
-		return "Gemini Free", tier
+		return "Google AI Free", tier
 	}
 	return "Google AI", tier
 }

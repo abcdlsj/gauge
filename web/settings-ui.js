@@ -138,7 +138,7 @@
       return layoutGroups().find((g) => g.id === id);
     }
 
-    // titleFor prefers the subscription name the server resolved ("Gemini
+    // titleFor prefers the subscription name the server resolved ("Google AI
     // Ultra") over the static section title.
     function titleFor(sec) {
       const g = groupOf(sec.id);
