@@ -9,4 +9,6 @@ quota.db-*
 gauge.key
 .DS_Store
 *.log
+# local notes, not for the repo
+RELEASE.local.md
 __pycache__/
