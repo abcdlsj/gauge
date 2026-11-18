@@ -151,6 +151,14 @@ func collectExtraAccounts(ctx context.Context, d *Deps) ([]model.Snapshot, []mod
 		}
 
 		label := d.accountLabel(ctx, slot)
+		// Cache the avatar locally once, so the panel never waits on a network
+		// image inside the webview.
+		if next := d.avatarData(ctx, label.Picture); next != label.Picture {
+			label.Picture = next
+			if raw, err := json.Marshal(label); err == nil {
+				_ = d.Store.Set(ctx, fmt.Sprintf("antigravity_account_%d", slot), string(raw))
+			}
+		}
 		for _, sn := range mergeFamilies(models, pools, nil) {
 			sn.Metric = fmt.Sprintf("%s@%d", sn.Metric, slot)
 			sn.Account = label.Email
