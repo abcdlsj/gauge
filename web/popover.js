@@ -93,10 +93,13 @@ function storedTheme() {
 let currentTheme = 'auto';
 
 function paintThemeButton(theme) {
-  const btn = $('#theme');
-  btn.innerHTML = THEME_ICONS[theme];
-  btn.title = `Theme: ${THEME_LABELS[theme]}`;
-  btn.setAttribute('aria-label', btn.title);
+  for (const id of ['#theme', '#settings-theme']) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.innerHTML = THEME_ICONS[theme];
+    btn.title = `Theme: ${THEME_LABELS[theme]}`;
+    btn.setAttribute('aria-label', btn.title);
+  }
 }
 
 // applyTheme drops data-theme for auto so app.css falls back to
@@ -110,12 +113,14 @@ function applyTheme(theme) {
   paintThemeButton(theme);
 }
 
-applyTheme(storedTheme());
-$('#theme').addEventListener('click', () => {
+function cycleTheme() {
   const next = THEMES[(THEMES.indexOf(currentTheme) + 1) % THEMES.length];
   applyTheme(next);
   toast(`Theme: ${THEME_LABELS[next]}`);
-});
+}
+
+applyTheme(storedTheme());
+$('#theme').addEventListener('click', cycleTheme);
 
 /* ---------- render ---------- */
 
@@ -279,19 +284,47 @@ async function load() {
 // the list for them and keeps the window fitted.
 const settingsUI = GaugeSettings.create({
   root: $('#settings-root'),
+  scroller: $('#settings-root'),
   layout: 'stack',
   // The menubar popover can add and remove Google accounts too; the consent
   // step hands off to the system browser (see settings-ui.js).
   oauth: true,
   toast,
-  onNavigate(title) {
-    $('#settings-title').textContent = title || 'Settings';
+  onNavigate(meta) {
+    const m = typeof meta === 'string' ? { title: meta || 'Settings', depth: meta ? 1 : 0 } : (meta || { depth: 0, title: 'Settings' });
+    const eyebrow = $('#settings-eyebrow');
+    const title = $('#settings-title');
+    const addBtn = $('#settings-add');
+    const themeBtn = $('#settings-theme');
+    const refreshBtn = $('#settings-refresh');
+    const homeBtn = $('#settings-home');
+    const backBtn = $('#close-settings');
+
+    title.textContent = m.title || 'Settings';
+    if (m.depth > 0 && m.parent) {
+      eyebrow.textContent = m.parent;
+      eyebrow.hidden = false;
+    } else {
+      eyebrow.textContent = '';
+      eyebrow.hidden = true;
+    }
+    const atRoot = !m.depth;
+    addBtn.hidden = !atRoot;
+    themeBtn.hidden = !atRoot;
+    homeBtn.hidden = atRoot;
+    refreshBtn.hidden = !(m.providers && m.providers.length);
+    backBtn.title = atRoot ? 'Back to Usage' : `Back to ${m.parent || 'Settings'}`;
+    backBtn.setAttribute('aria-label', backBtn.title);
+    requestAnimationFrame(syncScrollDepth);
   },
   onTheme(theme) {
     currentTheme = theme;
     paintThemeButton(theme);
   },
-  onSaved() { load(); },
+  onSaved() {
+    load();
+    requestAnimationFrame(syncScrollDepth);
+  },
 });
 
 // While settings are open the window keeps one height: at least what the
@@ -300,13 +333,14 @@ const settingsUI = GaugeSettings.create({
 const SETTINGS_MIN_HEIGHT = 600;
 let settingsHeight = 0;
 
-async function openSettings() {
+async function openSettings(initialRoute) {
   settingsHeight = Math.max(SETTINGS_MIN_HEIGHT, Math.ceil(window.innerHeight));
   $('#list-scroll').hidden = true;
   $('#view-settings').hidden = false;
   document.body.classList.add('settings-open');
-  await settingsUI.open();
+  await settingsUI.open(initialRoute);
   fitWindow();
+  syncScrollDepth();
 }
 
 function closeSettings() {
@@ -317,9 +351,28 @@ function closeSettings() {
   fitWindow();
 }
 
-$('#open-settings').addEventListener('click', openSettings);
+$('#open-settings').addEventListener('click', () => openSettings());
 $('#close-settings').addEventListener('click', () => {
   if (!settingsUI.back()) closeSettings();
+});
+$('#settings-eyebrow').addEventListener('click', () => settingsUI.back());
+$('#settings-add').addEventListener('click', () => settingsUI.open('add'));
+$('#settings-theme').addEventListener('click', () => {
+  cycleTheme();
+  settingsUI.reload();
+});
+$('#settings-home').addEventListener('click', closeSettings);
+$('#settings-refresh').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  try {
+    await settingsUI.refreshCurrent();
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
 });
 
 $('#refresh-all').addEventListener('click', async (e) => {
@@ -400,7 +453,7 @@ paintThemeButton(currentTheme);
 // ?settings=1 opens the settings index, ?settings=<section> one section
 // (screenshots and links use it).
 const settingsParam = new URLSearchParams(location.search).get('settings');
-if (settingsParam) openSettings().then(() => { if (settingsParam !== '1') settingsUI.open(settingsParam); });
+if (settingsParam) openSettings(settingsParam === '1' ? undefined : settingsParam);
 setInterval(load, 20000);
 setInterval(refreshTickers, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });

@@ -46,6 +46,7 @@ def fixture_layout() -> list:
 
     return [
         {"id": "google", "title": "Google AI Ultra", "detail": "Ultra 5x", "hidden": False,
+         "slot": 1, "email": "songjian.li@gmail.com", "account_name": "Lisong Jian",
          "providers": ["antigravity", "google-flow", "colab"],
          "items": [
              item("antigravity/gemini_models", "Antigravity · Gemini"),
@@ -195,7 +196,7 @@ def fixture_settings() -> dict:
              ]},
             {"id": "general", "title": "General", "providers": [],
              "fields": [
-                 field("webhook_url", "Alert webhook", "secret", optional=True, help="Receives JSON when a source changes state."),
+                 field("webhook_url", "Alert webhook", "secret", optional=True, placeholder="https://hooks.slack.com/services/…", help="Receives JSON when a source changes state."),
                  field("app_icon", "Icon", "select", options=["gauge", "classic"], default="gauge", help="Menu bar and window mark."),
              ]},
         ]
@@ -417,13 +418,20 @@ def main() -> None:
         base = f"http://127.0.0.1:{port}"
         shot(f"{base}/popover.html?theme=light", OUT / "popover-light.png", 372, 720)
         shot(f"{base}/popover.html?theme=dark", OUT / "popover-dark.png", 372, 720)
-        shot(f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png", 372, 780)
-        shot(f"{base}/popover.html?settings=gcp&theme=light", OUT / "popover-settings-gcp.png", 372, 780)
+        shot(f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png", 372, 640)
+        shot(f"{base}/popover.html?settings=1&theme=dark", OUT / "popover-settings-dark.png", 372, 640)
+        shot(f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png", 372, 760)
+        shot(f"{base}/popover.html?settings=gcp&theme=light", OUT / "popover-settings-gcp.png", 372, 660)
+        shot(f"{base}/popover.html?settings=add&theme=light", OUT / "popover-settings-add.png", 372, 600)
         shot(f"{base}/popover.html?settings=general&theme=dark", OUT / "popover-settings-general.png", 372, 600)
         shot(f"{base}/popover.html?settings=general&theme=light", OUT / "popover-settings-general-light.png", 372, 600)
+        shot(f"{base}/popover.html?settings=google/connection&theme=light", OUT / "popover-settings-connection.png", 372, 700)
+        shot(f"{base}/popover.html?settings=gcp/connection&theme=light", OUT / "popover-settings-gcp-connection.png", 372, 760)
+        shot(f"{base}/popover.html?settings=google/schedule&theme=light", OUT / "popover-settings-schedule.png", 372, 600)
+        shot(f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png", 372, 600)
+        shot(f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png", 372, 600)
         shot(f"{base}/settings.html?theme=light#general", OUT / "web-settings-general.png", 1100, 700, 1)
         shot(f"{base}/settings.html?theme=light#google", OUT / "web-settings.png", 1100, 1200, 1)
-        shot(f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png", 372, 1100)
         shot(f"{base}/index.html?theme=light#/overview", OUT / "web-overview.png", 1100, 1300, 1)
         shot(f"{base}/index.html?theme=dark#/source/google", OUT / "web-source.png", 1100, 900, 1)
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
@@ -434,12 +442,19 @@ def main() -> None:
         "popover-light.png",
         "popover-dark.png",
         "popover-settings.png",
+        "popover-settings-dark.png",
+        "popover-settings-source.png",
         "popover-settings-gcp.png",
+        "popover-settings-add.png",
         "popover-settings-general.png",
         "popover-settings-general-light.png",
+        "popover-settings-connection.png",
+        "popover-settings-gcp-connection.png",
+        "popover-settings-schedule.png",
+        "popover-settings-webhook.png",
+        "popover-settings-add-instance.png",
         "web-settings-general.png",
         "web-settings.png",
-        "popover-settings-source.png",
         "web-overview.png",
         "web-source.png",
         "app-icon.png",
