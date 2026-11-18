@@ -153,17 +153,20 @@ const shortNames = {
   month_to_date_cost: 'Cost',
 };
 
-function renderAccountBadge(accounts) {
+// renderAccountLine is the Antigravity identity: avatar, name, email and the
+// subscription tier, one line under the source title.
+function renderAccountLine(accounts) {
   const a = (accounts || [])[0];
   if (!a) return '';
   const tier = a.tier || '';
   const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
   const label = kind === 'ultra' ? 'Google AI Ultra' : kind === 'pro' ? 'Google AI Pro' : tier;
   return `
-    <span class="src-account" title="${esc(a.email || '')}">
+    <div class="src-account">
       <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
-      ${label ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(label)}</span>` : ''}
-    </span>`;
+      <span class="who"><b>${esc(a.name || a.email || '')}</b>${a.name && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
+      ${label ? `<span class="plan ${kind === 'ultra' ? '' : kind}" title="${esc(tier)}">${esc(label)}</span>` : ''}
+    </div>`;
 }
 
 function renderWindow(series) {
@@ -218,17 +221,17 @@ function renderSources(overview) {
     const cards = visible.filter((q) => q.provider === name);
     const pools = cards.filter((q) => q.series && q.series.length);
     const minis = cards.filter((q) => !(q.series && q.series.length));
-    const account = name === 'antigravity'
-      ? renderAccountBadge(overview.accounts)
-      : cards[0].account ? `<span class="src-user">${esc(cards[0].account.split('@')[0])}</span>` : '';
+    const user = name !== 'antigravity' && cards[0].account
+      ? `<span class="src-user">${esc(cards[0].account.split('@')[0])}</span>` : '';
     const stale = cards.some((q) => q.status === 'error' || q.status === 'expired_auth');
     return `
       <section class="src" data-provider="${esc(name)}">
         <div class="src-head">
           <span class="src-name">${esc(titles.get(name) || name)}</span>
           ${stale ? '<span class="src-stale" title="Last refresh failed; numbers may be old">stale</span>' : ''}
-          ${account}
+          ${user}
         </div>
+        ${name === 'antigravity' ? renderAccountLine(overview.accounts) : ''}
         ${pools.map((sn) => renderPool(sn, pools.length > 1)).join('')}
         ${minis.map(renderMini).join('')}
       </section>`;
