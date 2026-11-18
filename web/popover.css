@@ -280,6 +280,71 @@ body.is-resizing .scroll-area::-webkit-scrollbar { display: none; }
 .mini .value span { font-size: 10.5px; font-weight: 500; color: var(--muted); }
 .mini.notice { color: var(--muted); font-size: 12px; padding: 10px 14px; }
 
+/* ---------- startup / empty state ---------- */
+
+/* No snapshots yet: name every source and its state instead of one vague
+   "warming up" line, and link each row to the page that fixes it. */
+.setup { padding: 2px 0; }
+.setup-head {
+  padding: 6px 14px 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.setup-list { display: flex; flex-direction: column; }
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px 10px;
+  align-items: baseline;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.setup-row:hover { background: var(--surface-2); }
+.setup-name {
+  font-size: 12.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setup-word {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.setup-word.is-error,
+.setup-word.is-expired_auth { color: var(--danger); }
+.setup-note {
+  grid-column: 1 / -1;
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setup-foot {
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.setup-link {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.setup-link:hover { text-decoration: underline; }
+
 /* ---------- footer ---------- */
 
 .pop-foot {

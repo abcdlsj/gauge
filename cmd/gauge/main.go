@@ -81,8 +81,9 @@ func main() {
 		// real height as soon as it has painted.
 		initialPopoverHeight = 640
 		// popoverMinHeight keeps a nearly empty view (or a page that has not
-		// painted yet) from collapsing the popover to a sliver.
-		popoverMinHeight = 140
+		// painted yet) from collapsing the popover to a sliver. It matches
+		// POPOVER_MIN_HEIGHT in web/popover.js.
+		popoverMinHeight = 320
 		// popoverMaxHeight is 900pt (the shortest display macOS still supports)
 		// less the menu bar (24) and the Dock (96), so the popover always fits
 		// between them without clipping its own footer.

@@ -256,6 +256,84 @@ function bodyFor(cards) {
     : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
 }
 
+// STATE_WORD is the one word the startup list puts next to a source.
+const STATE_WORD = {
+  ok: 'ready',
+  running: 'collecting…',
+  unconfigured: 'not set up',
+  expired_auth: 'sign-in expired',
+  error: 'failed',
+  idle: 'waiting',
+};
+
+// SEVERITY puts the state worth fixing first, the same order Settings uses.
+const SEVERITY = ['expired_auth', 'error', 'unconfigured', 'running', 'idle', 'ok'];
+
+// NETWORK_ERROR matches the transport failures a proxy fixes; anything else is
+// a credential or upstream problem the user has to see verbatim.
+const NETWORK_ERROR = /timeout|deadline|no route|network is unreachable|connection refused|proxyconnect|dial tcp|tls handshake|no such host|EOF/i;
+
+const NETWORK_SETTINGS = 'general/network';
+
+// startupState summarises one run state per subscription. A fresh install has
+// no snapshots at all, and "warming up" would hide seven unconfigured sources
+// behind one reassuring sentence.
+function startupState(overview) {
+  const runs = overview.runs || [];
+  const rows = (overview.layout || [])
+    .filter((g) => g.providers && g.providers.length)
+    .map((g) => {
+      const own = g.providers
+        .map((name) => runs.find((r) => r.provider === name))
+        .filter(Boolean)
+        .sort((a, b) => SEVERITY.indexOf(a.status) - SEVERITY.indexOf(b.status));
+      const run = own[0] || null;
+      const status = run ? run.status : 'idle';
+      const error = String((run && run.error) || '');
+      return {
+        id: g.id,
+        title: g.title,
+        status,
+        word: STATE_WORD[status] || status,
+        detail: error,
+        note: error ? friendlyError(error) : '',
+        network: NETWORK_ERROR.test(error),
+      };
+    });
+  const failing = rows.filter((r) => r.status === 'error' || r.status === 'expired_auth').length;
+  const setup = rows.filter((r) => r.status === 'unconfigured').length;
+  const network = rows.some((r) => r.network);
+  const word = network ? 'network unreachable'
+    : failing ? 'refresh failed'
+      : setup ? 'setup needed'
+        : rows.length ? 'no data yet' : 'starting…';
+  return { rows, word, network };
+}
+
+function friendlyError(message) {
+  const text = String(message || '').replace(/\s+/g, ' ').trim();
+  if (NETWORK_ERROR.test(text)) return 'no connection — check the proxy';
+  return text.replace(/^[a-z][a-z ]*: /i, '').slice(0, 120);
+}
+
+function renderStartup(overview) {
+  const { rows, network } = startupState(overview);
+  const list = rows.map((r) => `
+    <button class="setup-row" type="button" data-settings="${esc(r.id)}" title="${esc(r.detail || '')}">
+      <span class="setup-name">${esc(r.title)}</span>
+      <span class="setup-word is-${esc(r.status)}">${esc(r.word)}</span>
+      ${r.note ? `<span class="setup-note">${esc(r.note)}</span>` : ''}
+    </button>`).join('');
+  return `
+    <div class="setup">
+      <div class="setup-head">Nothing collected yet</div>
+      <div class="setup-list">${list}</div>
+      <div class="setup-foot">${network
+        ? 'Upstream is unreachable. <button class="setup-link" type="button" data-settings="' + NETWORK_SETTINGS + '">Check the proxy</button>'
+        : 'Open a source to add what it needs.'}</div>
+    </div>`;
+}
+
 function render(overview) {
   const quotas = overview.quotas || [];
   const root = $('#pop-body');
@@ -263,11 +341,13 @@ function render(overview) {
   root.innerHTML = sources
     || (quotas.length
       ? '<div class="mini notice">Every card is hidden. Turn some on in Settings.</div>'
-      : '<div class="mini notice">No snapshots yet — collectors are warming up.</div>');
+      : renderStartup(overview));
 
   const times = quotas.map((q) => new Date(q.updated_at).getTime()).filter((n) => !Number.isNaN(n));
   const latest = times.length ? Math.max(...times) : null;
-  $('#sync').innerHTML = latest ? `updated <b data-ago="${new Date(latest).toISOString()}"></b>` : 'loading…';
+  $('#sync').innerHTML = latest
+    ? `updated <b data-ago="${new Date(latest).toISOString()}"></b>`
+    : esc(startupState(overview).word);
   refreshTickers();
   if (!document.body.classList.contains('settings-open')) fitWindow();
   syncScrollDepth();
@@ -348,6 +428,11 @@ function closeSettings() {
 }
 
 $('#open-settings').addEventListener('click', () => openSettings());
+// The startup list and its proxy hint open the page that fixes them.
+$('#pop-body').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-settings]');
+  if (row) openSettings(row.dataset.settings);
+});
 $('#close-settings').addEventListener('click', () => {
   if (!settingsUI.back()) closeSettings();
 });
@@ -395,7 +480,16 @@ function syncScrollDepth() {
 }
 
 document.addEventListener('scroll', syncScrollDepth, { capture: true, passive: true });
-window.addEventListener('resize', syncScrollDepth);
+// A resize we did not ask for (first show, display change, the menu bar
+// moving) invalidates the measurement; our own resize echoes do not. The
+// debounce keeps the four measurements of a window animation out of it.
+let resizeFitTimer = 0;
+window.addEventListener('resize', () => {
+  syncScrollDepth();
+  if (Math.abs(Math.round(window.innerHeight) - lastSentHeight) <= 1) return;
+  clearTimeout(resizeFitTimer);
+  resizeFitTimer = setTimeout(fitWindow, 120);
+});
 // Scroll events are enough in the webview; the ticker is a cheap backstop for
 // the cases where layout moves without a scroll (late fonts, resized cards).
 setInterval(syncScrollDepth, 1000);
@@ -403,7 +497,9 @@ setInterval(syncScrollDepth, 1000);
 // fitWindow asks the shell to size the popover to the rendered content, gliding
 // both the CSS panel height and the native macOS frame over the same 180ms
 // top-anchored curve. Past POPOVER_MAX_HEIGHT the list or form scrolls inside.
-const POPOVER_MIN_HEIGHT = 140;
+// An empty or not-yet-painted page still gets a window worth opening: the
+// settings index needs this much before the first measurement is trustworthy.
+const POPOVER_MIN_HEIGHT = 320;
 const POPOVER_MAX_HEIGHT = 780;
 const RESIZE_MS = 180;
 
@@ -488,6 +584,12 @@ function fitWindow() {
 }
 
 document.fonts?.ready?.then(fitWindow);
+// Late content (avatars, a settings page that renders after its fetch) still
+// has to reach the shell: measure whenever the rendered body changes height.
+if (typeof ResizeObserver === 'function') {
+  const observer = new ResizeObserver(() => fitWindow());
+  [$('#pop-body'), $('#settings-root')].forEach((el) => { if (el) observer.observe(el); });
+}
 
 paintThemeButton(currentTheme);
 // ?settings=1 opens the settings index, ?settings=<section> one section
@@ -500,5 +602,11 @@ if (settingsParam) {
 load();
 setInterval(load, 20000);
 setInterval(refreshTickers, 1000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+// Showing the popover re-measures: the first paint happens while the window is
+// still hidden, where layout can be empty and every measurement too small.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  load();
+  fitWindow();
+});
 syncScrollDepth();
