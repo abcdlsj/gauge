@@ -11,11 +11,13 @@ DIST    := build/dist
 APP     := build/bin/Gauge.app
 APPICON := build/icon/AppIcon.icns
 APKZIP  := $(DIST)/Gauge-$(SEMVER)-macos-universal.zip
+DMGROOT := build/dmg
+APKDMG  := $(DIST)/Gauge-$(SEMVER)-macos-universal.dmg
 
 # Headless builds. Windows only differs by the .exe suffix.
 SERVER_TARGETS := linux/amd64 linux/arm64 windows/amd64 windows/arm64
 
-.PHONY: build run test vet fmt tidy clean size docker icons app run-app dist server-dist version-check
+.PHONY: build run test vet fmt tidy clean size docker icons app run-app dist server-dist version-check dmg
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/gauge-server
@@ -73,8 +75,23 @@ icons:
 run-app: app
 	open "$(APP)"
 
-# Release assets: the universal app bundle and the headless server per platform.
-dist: app
+# A drag-to-install disk image: the bundle plus an /Applications symlink, so
+# the mount window is the usual two-icon drop target. No Finder scripting and
+# no background image, which keeps this reproducible on a headless runner.
+dmg: app
+	@mkdir -p "$(DIST)"
+	@rm -rf "$(DMGROOT)"
+	@mkdir -p "$(DMGROOT)"
+	@ditto "$(APP)" "$(DMGROOT)/Gauge.app"
+	@ln -s /Applications "$(DMGROOT)/Applications"
+	@rm -f "$(APKDMG)"
+	@hdiutil create -quiet -volname "Gauge $(SEMVER)" -srcfolder "$(DMGROOT)" \
+		-fs HFS+ -format UDZO -ov "$(APKDMG)"
+	@rm -rf "$(DMGROOT)"
+	@echo "built $(APKDMG) ($$(du -h "$(APKDMG)" | cut -f1))"
+
+# Release assets: the disk image, the zipped bundle and the headless server.
+dist: app dmg
 	@mkdir -p "$(DIST)"
 	@rm -f "$(APKZIP)"
 	@ditto -c -k --keepParent "$(APP)" "$(APKZIP)"
@@ -108,4 +125,4 @@ version-check:
 		echo "version $$v is consistent in the files (no tag v$$v yet)"
 
 clean:
-	rm -rf bin build/dist
+	rm -rf bin build/dist build/dmg

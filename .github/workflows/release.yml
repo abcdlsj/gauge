@@ -40,10 +40,14 @@ jobs:
           lipo -archs build/bin/Gauge.app/Contents/MacOS/Gauge | grep -q arm64
           lipo -archs build/bin/Gauge.app/Contents/MacOS/Gauge | grep -q x86_64
           codesign --verify --deep --strict build/bin/Gauge.app
+          hdiutil attach -nobrowse -readonly build/dist/Gauge-*-macos-universal.dmg
+          ls /Volumes/Gauge*/Gauge.app/Contents/MacOS/Gauge
+          test -L /Volumes/Gauge*/Applications
+          hdiutil detach -quiet /Volumes/Gauge*
       - uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: build/dist/Gauge-*-macos-universal.zip
+          path: build/dist/Gauge-*-macos-universal.*
           if-no-files-found: error
 
   server:

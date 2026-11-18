@@ -19,16 +19,18 @@ same UI for a server or a container.
 
 ## Install
 
-Download `Gauge-x.y.z-macos-universal.zip` from
-[Releases](https://github.com/abcdlsj/gauge/releases), move `Gauge.app` to
-`/Applications`. The bundle is ad-hoc signed, not notarised: on first launch use
-right-click → Open, or
+Download `Gauge-x.y.z-macos-universal.dmg` from
+[Releases](https://github.com/abcdlsj/gauge/releases), open it and drag **Gauge**
+onto the **Applications** shortcut in the window. The bundle is ad-hoc signed,
+not notarised: on first launch use right-click → Open, or
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Gauge.app
 ```
 
-Requires macOS 13+. Builds for Apple Silicon and Intel (universal).
+Requires macOS 13+. The image carries one universal bundle (Apple Silicon and
+Intel); a `.zip` of the same bundle and the headless binaries for Linux and
+Windows sit next to it in the same release.
 
 ## Where the data lives
 
@@ -152,7 +154,8 @@ per subscription with all of its cards.
 
 ```sh
 make app           # build/bin/Gauge.app — universal, needs macOS + Xcode CLT
-make dist          # build/dist/Gauge-<version>-macos-universal.zip
+make dmg           # build/dist/Gauge-<version>-macos-universal.dmg
+make dist          # the .dmg plus the .zip
 make server-dist   # headless binaries for linux/windows, amd64 + arm64
 make run-app
 make test          # go test ./...
