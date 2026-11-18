@@ -107,7 +107,7 @@ func main() {
 		}
 		if popover != nil && payload.Height != fittedHeight {
 			fittedHeight = payload.Height
-			popover.SetSize(popoverWidth, payload.Height)
+			resizePopover(popover, popoverWidth, payload.Height)
 			logger.Printf("popover content height -> %d", payload.Height)
 		}
 		w.WriteHeader(http.StatusNoContent)

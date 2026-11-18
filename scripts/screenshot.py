@@ -16,9 +16,11 @@ import os
 import shutil
 import signal
 import socketserver
+import struct
 import subprocess
 import threading
 import time
+import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -350,9 +352,73 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         length = int(self.headers.get("Content-Length") or 0)
-        self.rfile.read(length)
+        body = self.rfile.read(length)
+        if self.path.split("?")[0] == "/api/ui/height" and body:
+            try:
+                h = int(json.loads(body).get("height") or 0)
+                if h > 0:
+                    self.server.reported_height = max(140, min(780, h))
+            except (ValueError, TypeError):
+                pass
         self.send_response(204)
         self.end_headers()
+
+
+def crop_png_height(path: Path, target_h: int) -> None:
+    """Crop a non-interlaced PNG to its top target_h pixel rows in-place."""
+    raw_file = path.read_bytes()
+    sig = b"\x89PNG\r\n\x1a\n"
+    if not raw_file.startswith(sig) or target_h <= 0:
+        return
+    pos = len(sig)
+    ihdr = None
+    pre_idat: list[tuple[bytes, bytes]] = []
+    idat_parts: list[bytes] = []
+    while pos + 8 <= len(raw_file):
+        length = struct.unpack(">I", raw_file[pos:pos + 4])[0]
+        ctype = raw_file[pos + 4:pos + 8]
+        cdata = raw_file[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if ctype == b"IHDR":
+            ihdr = cdata
+        elif ctype == b"IDAT":
+            idat_parts.append(cdata)
+        elif ctype == b"IEND":
+            break
+        elif not idat_parts:
+            pre_idat.append((ctype, cdata))
+    if not ihdr or not idat_parts:
+        return
+    w, h, bit_depth, color_type, comp, flt, interlace = struct.unpack(">IIBBBBB", ihdr)
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+    if interlace != 0 or not channels or target_h >= h:
+        return
+    stride = (w * channels * bit_depth + 7) // 8
+    pixels = zlib.decompress(b"".join(idat_parts))
+    row_bytes = 1 + stride
+    if len(pixels) < target_h * row_bytes:
+        return
+    new_ihdr = struct.pack(">IIBBBBB", w, target_h, bit_depth, color_type, comp, flt, interlace)
+    new_idat = zlib.compress(pixels[:target_h * row_bytes], 6)
+
+    def pack_chunk(ctype: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(ctype + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", crc)
+
+    chunks = [sig, pack_chunk(b"IHDR", new_ihdr)]
+    for ctype, cdata in pre_idat:
+        chunks.append(pack_chunk(ctype, cdata))
+    chunks.append(pack_chunk(b"IDAT", new_idat))
+    chunks.append(pack_chunk(b"IEND", b""))
+    path.write_bytes(b"".join(chunks))
+
+
+def popover_shot(httpd: socketserver.TCPServer, url: str, out: Path, scale: int = 2) -> None:
+    httpd.reported_height = None
+    shot(url, out, 372, 780, scale)
+    h = getattr(httpd, "reported_height", None)
+    if isinstance(h, int) and 140 <= h < 780:
+        crop_png_height(out, h * scale)
 
 
 def shot(url: str, out: Path, width: int, height: int, scale: int = 2) -> None:
@@ -416,20 +482,20 @@ def main() -> None:
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{port}"
-        shot(f"{base}/popover.html?theme=light", OUT / "popover-light.png", 372, 720)
-        shot(f"{base}/popover.html?theme=dark", OUT / "popover-dark.png", 372, 720)
-        shot(f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png", 372, 640)
-        shot(f"{base}/popover.html?settings=1&theme=dark", OUT / "popover-settings-dark.png", 372, 640)
-        shot(f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png", 372, 760)
-        shot(f"{base}/popover.html?settings=gcp&theme=light", OUT / "popover-settings-gcp.png", 372, 660)
-        shot(f"{base}/popover.html?settings=add&theme=light", OUT / "popover-settings-add.png", 372, 600)
-        shot(f"{base}/popover.html?settings=general&theme=dark", OUT / "popover-settings-general.png", 372, 600)
-        shot(f"{base}/popover.html?settings=general&theme=light", OUT / "popover-settings-general-light.png", 372, 600)
-        shot(f"{base}/popover.html?settings=google/connection&theme=light", OUT / "popover-settings-connection.png", 372, 700)
-        shot(f"{base}/popover.html?settings=gcp/connection&theme=light", OUT / "popover-settings-gcp-connection.png", 372, 760)
-        shot(f"{base}/popover.html?settings=google/schedule&theme=light", OUT / "popover-settings-schedule.png", 372, 600)
-        shot(f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png", 372, 600)
-        shot(f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png", 372, 600)
+        popover_shot(httpd, f"{base}/popover.html?theme=light", OUT / "popover-light.png")
+        popover_shot(httpd, f"{base}/popover.html?theme=dark", OUT / "popover-dark.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=1&theme=dark", OUT / "popover-settings-dark.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=gcp&theme=light", OUT / "popover-settings-gcp.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=add&theme=light", OUT / "popover-settings-add.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=general&theme=dark", OUT / "popover-settings-general.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=general&theme=light", OUT / "popover-settings-general-light.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=google/connection&theme=light", OUT / "popover-settings-connection.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=gcp/connection&theme=light", OUT / "popover-settings-gcp-connection.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=google/schedule&theme=light", OUT / "popover-settings-schedule.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png")
         shot(f"{base}/settings.html?theme=light#general", OUT / "web-settings-general.png", 1100, 700, 1)
         shot(f"{base}/settings.html?theme=light#google", OUT / "web-settings.png", 1100, 1200, 1)
         shot(f"{base}/index.html?theme=light#/overview", OUT / "web-overview.png", 1100, 1300, 1)

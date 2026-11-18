@@ -1375,6 +1375,7 @@
       } else {
         scroller.scrollTop = top;
       }
+      if (opts.onRender) opts.onRender();
     }
 
     /* ---------- persistence & layout ---------- */

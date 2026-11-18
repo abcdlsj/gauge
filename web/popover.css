@@ -34,7 +34,7 @@ html[data-shell="popover"] body {
 html[data-shell="popover"] .panel {
   display: flex;
   flex-direction: column;
-  height: auto;
+  height: var(--panel-h, auto);
   max-height: 100%;
   /* app.css styles .panel as a standalone card; inside the popover the window
      is the frame, so drop that padding/margin/radius. */
@@ -43,6 +43,10 @@ html[data-shell="popover"] .panel {
   border-radius: 0;
   background: var(--bg);
   overflow: hidden;
+  transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-shell="popover"] .panel { transition: none; }
 }
 
 /* ---------- header ---------- */
@@ -153,6 +157,8 @@ html[data-shell="popover"] .panel {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+body.is-resizing .scroll-area { scrollbar-width: none; }
+body.is-resizing .scroll-area::-webkit-scrollbar { display: none; }
 
 /* A row cut by the bottom edge reads as a hard clip without help. The fade is
    the hint that there is more below; popover.js sets .has-more only while the
@@ -361,7 +367,7 @@ body.settings-open .pop-foot-note { display: inline; }
 .set-body {
   display: flex;
   flex-direction: column;
-  padding: 0 0 6px;
+  padding: 0 0 4px;
 }
 
 /* Settings swaps the home header out for its own unified top bar. */

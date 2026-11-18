@@ -46,8 +46,8 @@
   from { opacity: 0; transform: translateX(-10px); }
   to { opacity: 1; transform: none; }
 }
-.sx-anim-fwd { animation: sx-in-fwd 0.14s cubic-bezier(0.2, 0.7, 0.2, 1); }
-.sx-anim-back { animation: sx-in-back 0.14s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sx-anim-fwd { animation: sx-in-fwd 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
+.sx-anim-back { animation: sx-in-back 0.18s cubic-bezier(0.22, 1, 0.36, 1); }
 @media (prefers-reduced-motion: reduce) {
   .sx-anim-fwd, .sx-anim-back { animation: none; }
 }
@@ -282,7 +282,7 @@
 
 .sx-add-dock {
   margin-top: auto;
-  padding: 14px var(--sx-pad-x) 4px;
+  padding: 10px var(--sx-pad-x) 4px;
 }
 .sx-split .sx-add-dock {
   margin-top: 0;

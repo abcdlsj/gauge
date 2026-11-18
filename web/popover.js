@@ -269,7 +269,7 @@ function render(overview) {
   const latest = times.length ? Math.max(...times) : null;
   $('#sync').innerHTML = latest ? `updated <b data-ago="${new Date(latest).toISOString()}"></b>` : 'loading…';
   refreshTickers();
-  fitWindow();
+  if (!document.body.classList.contains('settings-open')) fitWindow();
   syncScrollDepth();
 }
 
@@ -326,26 +326,21 @@ const settingsUI = GaugeSettings.create({
     load();
     requestAnimationFrame(syncScrollDepth);
   },
+  onRender() {
+    fitWindow();
+  },
 });
 
-// While settings are open the window keeps one height: at least what the
-// list had, and never less than SETTINGS_MIN_HEIGHT. Pages scroll inside it,
-// so moving between them or saving does not resize (and jump) the window.
-const SETTINGS_MIN_HEIGHT = 600;
-let settingsHeight = 0;
-
 async function openSettings(initialRoute) {
-  settingsHeight = Math.max(SETTINGS_MIN_HEIGHT, Math.ceil(window.innerHeight));
+  await settingsUI.open(initialRoute);
   $('#list-scroll').hidden = true;
   $('#view-settings').hidden = false;
   document.body.classList.add('settings-open');
-  await settingsUI.open(initialRoute);
   fitWindow();
   syncScrollDepth();
 }
 
 function closeSettings() {
-  settingsHeight = 0;
   $('#view-settings').hidden = true;
   $('#list-scroll').hidden = false;
   document.body.classList.remove('settings-open');
@@ -405,55 +400,104 @@ window.addEventListener('resize', syncScrollDepth);
 // the cases where layout moves without a scroll (late fonts, resized cards).
 setInterval(syncScrollDepth, 1000);
 
-// fitWindow asks the shell to size the popover to the rendered content. The
-// shell caps the window (see cmd/gauge); past that cap the list or the
-// settings form scrolls inside the popover.
-let fitTimer = null;
+// fitWindow asks the shell to size the popover to the rendered content, gliding
+// both the CSS panel height and the native macOS frame over the same 180ms
+// top-anchored curve. Past POPOVER_MAX_HEIGHT the list or form scrolls inside.
+const POPOVER_MIN_HEIGHT = 140;
+const POPOVER_MAX_HEIGHT = 780;
+const RESIZE_MS = 180;
 
-// naturalHeight is the height the panel wants, including the body inset. The
-// panel is capped at the window height once the content is too tall, so it is
-// lifted for the measurement; otherwise a capped page would report the window
-// height back and the window could never settle.
-function naturalHeight(panel) {
+let fitRaf = 0;
+let hasFitted = false;
+let lastSentHeight = 0;
+let resizeTimer = 0;
+
+function measureWindowHeight(panel) {
   const body = document.body;
   const scrollers = [document.querySelector('#pop-body'), document.querySelector('#settings-root')].filter(Boolean);
   const offsets = scrollers.map((el) => el.scrollTop);
   const prevBodyHeight = body.style.getPropertyValue('height');
   const prevMax = panel.style.maxHeight;
+  const prevTransition = panel.style.transition;
+  const prevPanelH = panel.style.getPropertyValue('--panel-h');
+
+  panel.style.transition = 'none';
+  panel.style.setProperty('--panel-h', 'auto');
   body.style.setProperty('height', 'auto', 'important');
   panel.style.maxHeight = 'none';
   const content = panel.getBoundingClientRect().height;
+
   body.style.removeProperty('height');
   panel.style.maxHeight = prevMax;
   if (prevBodyHeight) body.style.setProperty('height', prevBodyHeight, 'important');
+  if (prevPanelH) panel.style.setProperty('--panel-h', prevPanelH);
+  else panel.style.removeProperty('--panel-h');
+  panel.style.transition = prevTransition;
   // Lifting the cap scrolls the list back to the top; put it back where it was.
   scrollers.forEach((el, i) => { el.scrollTop = offsets[i]; });
+
   const style = getComputedStyle(body);
   const inset = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-  return Math.ceil(content + inset);
+  const windowHeight = Math.max(POPOVER_MIN_HEIGHT, Math.min(POPOVER_MAX_HEIGHT, Math.ceil(content + inset)));
+  return { windowHeight, targetPanelH: Math.max(0, windowHeight - inset) };
+}
+
+function applyPanelHeight(panel, livePanelH, targetPanelH) {
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animate = hasFitted && !reduced && Math.abs(livePanelH - targetPanelH) >= 0.5;
+
+  panel.style.transition = 'none';
+  if (!animate) {
+    panel.style.setProperty('--panel-h', `${targetPanelH}px`);
+    void panel.offsetHeight;
+    panel.style.transition = '';
+    hasFitted = true;
+    return;
+  }
+
+  panel.style.setProperty('--panel-h', `${livePanelH}px`);
+  void panel.offsetHeight;
+  panel.style.transition = '';
+  document.body.classList.add('is-resizing');
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    document.body.classList.remove('is-resizing');
+    syncScrollDepth();
+  }, RESIZE_MS + 30);
+  panel.style.setProperty('--panel-h', `${targetPanelH}px`);
 }
 
 function fitWindow() {
-  clearTimeout(fitTimer);
-  fitTimer = setTimeout(() => {
+  cancelAnimationFrame(fitRaf);
+  fitRaf = requestAnimationFrame(() => {
     const panel = document.querySelector('.panel');
     if (!panel) return;
-    const height = settingsHeight || naturalHeight(panel);
+    const livePanelH = hasFitted ? panel.getBoundingClientRect().height : 0;
+    const { windowHeight, targetPanelH } = measureWindowHeight(panel);
+    applyPanelHeight(panel, livePanelH, targetPanelH);
     syncScrollDepth();
-    fetch('/api/ui/height', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ height }),
-    }).catch(() => {});
-  }, 60);
+    if (windowHeight !== lastSentHeight) {
+      lastSentHeight = windowHeight;
+      fetch('/api/ui/height', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ height: windowHeight }),
+      }).catch(() => {});
+    }
+  });
 }
 
-load();
+document.fonts?.ready?.then(fitWindow);
+
 paintThemeButton(currentTheme);
 // ?settings=1 opens the settings index, ?settings=<section> one section
 // (screenshots and links use it).
 const settingsParam = new URLSearchParams(location.search).get('settings');
-if (settingsParam) openSettings(settingsParam === '1' ? undefined : settingsParam);
+if (settingsParam) {
+  document.body.classList.add('settings-open');
+  openSettings(settingsParam === '1' ? undefined : settingsParam);
+}
+load();
 setInterval(load, 20000);
 setInterval(refreshTickers, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
