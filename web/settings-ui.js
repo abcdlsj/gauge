@@ -76,6 +76,7 @@
     let overview = null;
     let current = null; // section id shown in the detail pane
     let editing = null; // secret key whose editor is open
+    const openSetup = new Set(); // sections whose "Connection & refresh" the user opened
 
     root.classList.add('sx', `sx-${layout}`);
 
@@ -129,6 +130,21 @@
       return { status: worst.status, run: worst };
     }
 
+    function layoutGroups() {
+      return (overview && overview.layout) || [];
+    }
+
+    function groupOf(id) {
+      return layoutGroups().find((g) => g.id === id);
+    }
+
+    // titleFor prefers the subscription name the server resolved ("Gemini
+    // Ultra") over the static section title.
+    function titleFor(sec) {
+      const g = groupOf(sec.id);
+      return (g && g.title) || sec.title;
+    }
+
     function titleOf(name) {
       const p = ((overview && overview.providers) || []).find((x) => x.name === name);
       return p ? p.title : name;
@@ -154,35 +170,56 @@
       }
       if (moved) {
         scroller.scrollTop = 0;
-        if (opts.onNavigate) opts.onNavigate(sec ? sec.title : null);
+        if (opts.onNavigate) opts.onNavigate(sec ? titleFor(sec) : null);
       } else {
         scroller.scrollTop = top;
       }
     }
 
+    // renderIndex is level one: every subscription in menu-bar order, each
+    // with a drag handle and a visibility switch; General sits apart.
     function renderIndex() {
-      const sources = sections.filter((s) => s.providers.length);
-      const others = sections.filter((s) => !s.providers.length);
-      const row = (s) => {
-        const st = stateOf(s);
-        const dot = st ? `<span class="sx-dot ${esc(st.status)}"></span>` : '<span class="sx-dot none"></span>';
-        const sub = st ? STATE_TEXT[st.status] || st.status : indexSummary(s);
-        const active = s.id === current ? ' aria-current="true"' : '';
+      const groups = layoutGroups().filter((g) => section(g.id));
+      const others = sections.filter((s) => !groupOf(s.id));
+      const groupRow = (g) => {
+        const sec = section(g.id);
+        const st = stateOf(sec);
+        const state = st ? STATE_TEXT[st.status] || st.status : '';
+        const sub = [g.detail, state].filter(Boolean).join(' · ');
+        const active = g.id === current ? ' aria-current="true"' : '';
         return `
-          <button class="sx-link" type="button" data-section="${esc(s.id)}"${active}>
-            ${dot}
-            <span class="sx-link-text"><b>${esc(s.title)}</b><span>${esc(sub)}</span></span>
+          <div class="sx-link sx-sortrow" data-sort-id="${esc(g.id)}" data-section="${esc(g.id)}" role="button" tabindex="0"${active}>
+            ${handle(g.title)}
+            <span class="sx-dot ${esc(st ? st.status : 'none')}"></span>
+            <span class="sx-link-text"><b>${esc(g.title)}</b><span>${esc(sub)}</span></span>
+            ${visSwitch('group', g.id, !g.hidden, `Show ${g.title}`)}
             ${CHEVRON}
-          </button>`;
+          </div>`;
       };
+      const plainRow = (s) => `
+        <div class="sx-link" data-section="${esc(s.id)}" role="button" tabindex="0"${s.id === current ? ' aria-current="true"' : ''}>
+          <span class="sx-link-text"><b>${esc(s.title)}</b><span>${esc(indexSummary(s))}</span></span>
+          ${CHEVRON}
+        </div>`;
       return `
         <div class="sx-group">
-          <h3 class="sx-caption">Sources</h3>
-          <div class="sx-card">${sources.map(row).join('')}</div>
+          <h3 class="sx-caption">Subscriptions</h3>
+          <div class="sx-card sx-sortlist" data-sort="groups">${groups.map(groupRow).join('')}</div>
+          <p class="sx-foot">Drag to reorder the menu bar. The switch shows or hides a subscription.</p>
         </div>
         <div class="sx-group">
-          <div class="sx-card">${others.map(row).join('')}</div>
+          <div class="sx-card">${others.map(plainRow).join('')}</div>
         </div>`;
+    }
+
+    const GRIP = '<svg viewBox="0 0 12 16" width="9" height="13" aria-hidden="true"><g fill="currentColor"><circle cx="3.5" cy="3" r="1.3"/><circle cx="8.5" cy="3" r="1.3"/><circle cx="3.5" cy="8" r="1.3"/><circle cx="8.5" cy="8" r="1.3"/><circle cx="3.5" cy="13" r="1.3"/><circle cx="8.5" cy="13" r="1.3"/></g></svg>';
+
+    function handle(label) {
+      return `<button class="sx-handle" type="button" data-handle aria-label="Move ${esc(label)}; use the arrow keys">${GRIP}</button>`;
+    }
+
+    function visSwitch(kind, id, on, label) {
+      return `<label class="sx-switch" title="${esc(label)}"><input type="checkbox" data-vis="${kind}" data-vis-id="${esc(id)}" aria-label="${esc(label)}"${on ? ' checked' : ''} /><span></span></label>`;
     }
 
     function indexSummary(s) {
@@ -191,31 +228,36 @@
 
     function renderDetail(sec) {
       const parts = [];
-      if (layout === 'split') parts.push(`<h2 class="sx-title">${esc(sec.title)}</h2>`);
+      if (layout === 'split') parts.push(`<h2 class="sx-title">${esc(titleFor(sec))}</h2>`);
       if (sec.summary) parts.push(`<p class="sx-summary">${esc(sec.summary)}</p>`);
 
       const st = stateOf(sec);
       if (st) parts.push(renderStatus(sec, st));
-      if (sec.id === 'antigravity') parts.push(renderAccounts());
+      if (sec.id === 'google') parts.push(renderAccounts());
       parts.push(renderCards(sec));
 
       // Sources split credentials from cadence; General keeps its own order.
       const fields = sec.fields.filter((f) => f.key !== ICON_KEY);
       const isSource = sec.providers.length > 0;
-      const creds = isSource ? fields.filter((f) => f.kind === 'secret' || f.kind === 'text' || (f.kind === 'number' && !f.unit)) : fields;
+      const creds = isSource ? fields.filter((f) => !(f.kind === 'number' && f.unit)) : fields;
       const prefs = fields.filter((f) => !creds.includes(f));
-      if (creds.length) {
+      if (isSource) {
+        // Credentials and cadence are rarely touched once a source works, so
+        // they fold away; they open by themselves while something is broken
+        // or a secret is being edited.
+        const broken = st && ['expired_auth', 'error', 'unconfigured'].includes(st.status);
+        const open = broken || (editing && fields.some((f) => f.key === editing)) || openSetup.has(sec.id);
+        parts.push(`
+          <details class="sx-more" data-more="${esc(sec.id)}"${open ? ' open' : ''}>
+            <summary><span>Connection &amp; refresh</span>${CHEVRON}</summary>
+            ${creds.length ? `<div class="sx-group"><div class="sx-card">${creds.map(renderField).join('')}</div></div>` : ''}
+            ${prefs.length ? `<div class="sx-group"><h3 class="sx-caption">Refresh every</h3><div class="sx-card">${prefs.map(renderField).join('')}</div></div>` : ''}
+          </details>`);
+      } else if (creds.length) {
         parts.push(`
           <div class="sx-group">
-            <h3 class="sx-caption">${isSource ? 'Connection' : 'Options'}</h3>
+            <h3 class="sx-caption">Options</h3>
             <div class="sx-card">${creds.map(renderField).join('')}</div>
-          </div>`);
-      }
-      if (prefs.length) {
-        parts.push(`
-          <div class="sx-group">
-            <h3 class="sx-caption">Schedule</h3>
-            <div class="sx-card">${prefs.map(renderField).join('')}</div>
           </div>`);
       }
       if (sec.id === 'general') parts.push(renderAppearance(sec.fields.find((f) => f.key === ICON_KEY)));
@@ -245,29 +287,135 @@
         </div>`;
     }
 
-    // renderCards lists the cards this source produced, each with a switch for
-    // the menu bar and the overview page. Detail pages always show them all.
+    // renderCards is level two: the subscription's own switch, then its
+    // cards in menu-bar order, each with a handle and a switch.
     function renderCards(sec) {
-      const quotas = ((overview && overview.quotas) || [])
-        .filter((q) => sec.providers.includes(q.provider) && q.kind !== 'note');
-      if (!quotas.length) return '';
-      const hidden = new Set((overview && overview.hidden_cards) || []);
-      const rows = quotas.map((q) => {
-        const id = `${q.provider}/${q.metric}`;
-        const windows = q.series && q.series.length ? q.series.map((x) => x.label).join(' · ') : '';
-        const sub = [sec.providers.length > 1 ? titleOf(q.provider) : '', windows, q.account || ''].filter(Boolean).join(' · ');
-        return `
-          <div class="sx-row">
-            <span class="sx-label"><b>${esc(q.label)}</b>${sub ? `<span class="sx-help">${esc(sub)}</span>` : ''}</span>
-            <label class="sx-switch"><input type="checkbox" data-card="${esc(id)}"${hidden.has(id) ? '' : ' checked'} /><span></span></label>
-          </div>`;
-      }).join('');
+      const g = groupOf(sec.id);
+      if (!g) return '';
+      const rows = g.items.map((it) => `
+        <div class="sx-row sx-sortrow" data-sort-id="${esc(it.id)}">
+          ${handle(it.label)}
+          <span class="sx-label"><b>${esc(it.label)}</b>${cardDetail(it)}</span>
+          ${visSwitch('item', it.id, !it.hidden, `Show ${it.label}`)}
+        </div>`).join('');
+      const empty = g.items.length ? '' : '<div class="sx-row"><span class="sx-help">No cards yet. They appear after the first successful refresh.</span></div>';
       return `
         <div class="sx-group">
-          <h3 class="sx-caption">Show in menu bar &amp; overview</h3>
-          <div class="sx-card">${rows}</div>
+          <h3 class="sx-caption">Menu bar &amp; overview</h3>
+          <div class="sx-card">
+            <div class="sx-row">
+              <span class="sx-label"><b>Show ${esc(g.title)}</b><span class="sx-help">${g.hidden ? 'Hidden: its cards are kept but not shown.' : 'Drag the cards below to reorder them.'}</span></span>
+              ${visSwitch('group', g.id, !g.hidden, `Show ${g.title}`)}
+            </div>
+            <div class="sx-sortlist${g.hidden ? ' muted' : ''}" data-sort="items:${esc(g.id)}">${rows}</div>
+            ${empty}
+          </div>
         </div>`;
     }
+
+    // cardDetail names the windows a card carries, from the latest snapshot.
+    function cardDetail(it) {
+      const q = ((overview && overview.quotas) || []).find((x) => x.provider === it.provider && x.metric === it.metric);
+      const windows = q && q.series && q.series.length ? q.series.map((x) => x.label).join(' · ') : '';
+      return windows ? `<span class="sx-help">${esc(windows)}</span>` : '';
+    }
+
+    /* ---------- layout: visibility and order ---------- */
+
+    async function saveLayout() {
+      const body = {
+        groups: layoutGroups().map((g) => ({
+          id: g.id,
+          hidden: !!g.hidden,
+          items: g.items.map((it) => ({ id: it.id, hidden: !!it.hidden })),
+        })),
+      };
+      try {
+        const res = await api('/api/display', { method: 'PUT', body: JSON.stringify(body) });
+        if (overview && res && res.layout) overview.layout = res.layout;
+        if (opts.onSaved) opts.onSaved();
+        return true;
+      } catch (err) {
+        toast(err.message);
+        return false;
+      }
+    }
+
+    function setVisible(kind, id, visible) {
+      if (kind === 'group') {
+        const g = groupOf(id);
+        if (g) g.hidden = !visible;
+      } else {
+        for (const g of layoutGroups()) {
+          const it = g.items.find((x) => x.id === id);
+          if (it) it.hidden = !visible;
+        }
+      }
+    }
+
+    // applyOrder copies the DOM order of a sortable list into the layout.
+    function applyOrder(list) {
+      const ids = [...list.querySelectorAll(':scope > [data-sort-id]')].map((el) => el.dataset.sortId);
+      const pick = (arr) => ids.map((id) => arr.find((x) => x.id === id)).filter(Boolean)
+        .concat(arr.filter((x) => !ids.includes(x.id)));
+      const target = list.dataset.sort;
+      if (target === 'groups') {
+        overview.layout = pick(layoutGroups());
+      } else if (target.startsWith('items:')) {
+        const g = groupOf(target.slice(6));
+        if (g) g.items = pick(g.items);
+      }
+    }
+
+    async function commitOrder(list, focusId) {
+      applyOrder(list);
+      if (await saveLayout()) {
+        render();
+        if (focusId) root.querySelector(`[data-sort-id="${CSS.escape(focusId)}"] [data-handle]`)?.focus();
+      } else {
+        await reloadSection();
+      }
+    }
+
+    // Drag with the pointer: the row follows the handle and swaps places with
+    // the neighbour it crosses; the order is saved on release.
+    let drag = null;
+    root.addEventListener('pointerdown', (e) => {
+      const h = e.target.closest('[data-handle]');
+      if (!h || e.button !== 0) return;
+      const row = h.closest('[data-sort-id]');
+      if (!row) return;
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      drag = { row, list: row.parentElement, moved: false };
+      row.classList.add('dragging');
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const others = [...drag.list.querySelectorAll(':scope > [data-sort-id]')].filter((r) => r !== drag.row);
+      const before = others.find((r) => {
+        const b = r.getBoundingClientRect();
+        return e.clientY < b.top + b.height / 2;
+      });
+      if (before) {
+        if (drag.row.nextElementSibling !== before) {
+          drag.list.insertBefore(drag.row, before);
+          drag.moved = true;
+        }
+      } else if (drag.list.lastElementChild !== drag.row) {
+        drag.list.appendChild(drag.row);
+        drag.moved = true;
+      }
+    });
+    const endDrag = () => {
+      if (!drag) return;
+      const { row, list, moved } = drag;
+      drag = null;
+      row.classList.remove('dragging');
+      if (moved) commitOrder(list);
+    };
+    root.addEventListener('pointerup', endDrag);
+    root.addEventListener('pointercancel', endDrag);
 
     function renderAccounts() {
       const accounts = (overview && overview.accounts) || [];
@@ -393,11 +541,8 @@
       }
       return `
         <div class="sx-row stack" data-key="${key}">
-          <span class="sx-row-head">
-            ${labelBlock(f)}
-            <span class="sx-secret">${state}${editing === f.key ? '' : buttons}</span>
-          </span>
-          ${editor}
+          ${labelBlock(f)}
+          ${editing === f.key ? editor : `<span class="sx-secret">${state}<span class="sx-secret-actions">${buttons}</span></span>`}
         </div>`;
     }
 
@@ -461,16 +606,18 @@
     }
 
     root.addEventListener('click', async (e) => {
-      const t = e.target.closest('button, input');
-      if (!t) return;
-      const d = t.dataset;
-
-      if (d.section) {
-        current = d.section;
+      if (e.target.closest('[data-handle], .sx-switch')) return;
+      const nav = e.target.closest('[data-section]');
+      if (nav) {
+        current = nav.dataset.section;
         editing = null;
         render();
         return;
       }
+      const t = e.target.closest('button, input');
+      if (!t) return;
+      const d = t.dataset;
+
       if (d.themeChoice) {
         const theme = d.themeChoice;
         const el = document.documentElement;
@@ -562,10 +709,21 @@
       }
     });
 
+    root.addEventListener('toggle', (e) => {
+      const d = e.target.closest && e.target.closest('details[data-more]');
+      if (!d) return;
+      if (d.open) openSetup.add(d.dataset.more);
+      else openSetup.delete(d.dataset.more);
+    }, true);
+
     root.addEventListener('change', (e) => {
       const t = e.target;
-      if (t.dataset.card) {
-        setCardVisible(t.dataset.card, t.checked).then((ok) => { if (!ok) t.checked = !t.checked; });
+      if (t.dataset.vis) {
+        setVisible(t.dataset.vis, t.dataset.visId, t.checked);
+        saveLayout().then((ok) => {
+          if (!ok) t.checked = !t.checked;
+          render();
+        });
         return;
       }
       if (t.dataset.switch) {
@@ -580,6 +738,21 @@
 
     root.addEventListener('keydown', (e) => {
       const t = e.target;
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && t.matches('[data-handle]')) {
+        e.preventDefault();
+        const row = t.closest('[data-sort-id]');
+        const sib = e.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling;
+        if (!sib || !sib.dataset.sortId) return;
+        if (e.key === 'ArrowUp') row.parentElement.insertBefore(row, sib);
+        else row.parentElement.insertBefore(sib, row);
+        commitOrder(row.parentElement, row.dataset.sortId);
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-section]')) {
+        e.preventDefault();
+        t.click();
+        return;
+      }
       if (e.key === 'Enter' && t.dataset.text) {
         e.preventDefault();
         t.blur();
@@ -598,21 +771,6 @@
         }
       }
     });
-
-    async function setCardVisible(id, visible) {
-      const hidden = new Set((overview && overview.hidden_cards) || []);
-      if (visible) hidden.delete(id);
-      else hidden.add(id);
-      try {
-        const res = await api('/api/display', { method: 'PUT', body: JSON.stringify({ hidden_cards: [...hidden] }) });
-        if (overview) overview.hidden_cards = res.hidden_cards;
-        if (opts.onSaved) opts.onSaved();
-        return true;
-      } catch (err) {
-        toast(err.message);
-        return false;
-      }
-    }
 
     async function startOAuth(extra) {
       let path = '/api/oauth/start';

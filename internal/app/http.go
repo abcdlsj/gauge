@@ -56,11 +56,18 @@ func interval(provider, label string, def, floor int) fieldDef {
 // the POST handler's allow-list.
 var settingSections = []sectionDef{
 	{
-		ID: "antigravity", Title: "Antigravity", Providers: []string{"antigravity"},
-		Summary: "Gemini and Claude model quota. Read from the running IDE first; the token is only needed when it is closed.",
+		// ID matches the layout group (internal/engine/layout.go): one page per
+		// subscription. The UI titles it after the plan ("Gemini Ultra").
+		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
+		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{
-			{Key: "antigravity_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Minted by Sign in with Google.", Sensitive: true, Optional: true},
-			interval("antigravity", "Refresh every", 5, 5),
+			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Only needed when the IDE is closed. Minted by Sign in with Google.", Sensitive: true, Optional: true},
+			{Key: "browser_cookies", Label: "Read cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Flow and Colab reuse the Chrome sign-in. One keychain prompt."},
+			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
+			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
+			interval("antigravity", "Antigravity", 5, 5),
+			interval("google-flow", "Flow", 30, 30),
+			interval("colab", "Colab", 30, 30),
 		},
 	},
 	{
@@ -68,7 +75,7 @@ var settingSections = []sectionDef{
 		Summary: "5-hour and weekly plan windows.",
 		Fields: []fieldDef{
 			{Key: "commandcode_api_key", Label: "API key", Kind: "secret", Placeholder: "user_…", Help: "Leave empty to use the Command Code CLI sign-in (~/.commandcode/auth.json).", Sensitive: true, Optional: true},
-			interval("commandcode", "Refresh every", 5, 2),
+			interval("commandcode", "Refresh", 5, 2),
 		},
 	},
 	{
@@ -76,23 +83,7 @@ var settingSections = []sectionDef{
 		Summary: "Design Plan windows and USD balance.",
 		Fields: []fieldDef{
 			{Key: "opendesign_control_key", Label: "Control key", Kind: "secret", Placeholder: "ck_…", Help: "Leave empty to use the Open Design CLI sign-in (~/.amr/config.json).", Sensitive: true, Optional: true},
-			interval("opendesign", "Refresh every", 5, 2),
-		},
-	},
-	{
-		ID: "colab", Title: "Colab", Providers: []string{"colab"},
-		Summary: "Compute-unit balance.",
-		Fields: []fieldDef{
-			{Key: "colab_cookie", Label: "Pasted cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
-			interval("colab", "Refresh every", 30, 30),
-		},
-	},
-	{
-		ID: "google-flow", Title: "Google Flow", Providers: []string{"google-flow"},
-		Summary: "Video credit balance.",
-		Fields: []fieldDef{
-			{Key: "flow_cookie", Label: "Pasted cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
-			interval("google-flow", "Refresh every", 30, 30),
+			interval("opendesign", "Refresh", 5, 2),
 		},
 	},
 	{
@@ -105,14 +96,13 @@ var settingSections = []sectionDef{
 			{Key: "gcp_currency", Label: "Currency", Kind: "text", Placeholder: "HKD", Default: "HKD"},
 			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Fallback when no ADC is found.", Sensitive: true, Optional: true},
 			{Key: "gcp_sa_json", Label: "Service account JSON", Kind: "secret", Multiline: true, Placeholder: `{"type":"service_account", …}`, Help: "Takes precedence over the refresh token.", Sensitive: true, Optional: true},
-			interval("gcp-billing", "Billing refresh", 360, 60),
-			interval("gcp-monitoring", "Monitoring refresh", 10, 10),
+			interval("gcp-billing", "Billing", 360, 60),
+			interval("gcp-monitoring", "Monitoring", 10, 10),
 		},
 	},
 	{
 		ID: "general", Title: "General", Providers: []string{},
 		Fields: []fieldDef{
-			{Key: "browser_cookies", Label: "Read Google cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Used by Colab and Flow. One keychain prompt."},
 			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Help: "Receives JSON when a source changes state.", Sensitive: true, Optional: true},
 			// The settings UI draws this one as a picker in the Appearance group.
 			{Key: IconSetting, Label: "Icon", Kind: "select", Options: []string{IconGauge, IconClassic}, Default: IconGauge, Help: "Menu bar and window mark."},
@@ -300,35 +290,26 @@ func (a *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"removed": key})
 }
 
-// handleDisplay stores which cards the menu bar and the overview show.
+// handleDisplay stores the order and visibility of the subscription groups
+// and their cards, shared by the menu bar and the overview page.
 func (a *Server) handleDisplay(w http.ResponseWriter, r *http.Request) {
-	var payload struct {
-		HiddenCards []string `json:"hidden_cards"`
-	}
+	var payload engine.StoredLayout
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if len(payload.HiddenCards) > 500 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many cards"})
-		return
-	}
-	hidden := make([]string, 0, len(payload.HiddenCards))
-	seen := map[string]bool{}
-	for _, id := range payload.HiddenCards {
-		provider, metric, ok := strings.Cut(id, "/")
-		if !ok || provider == "" || metric == "" || len(id) > 200 || seen[id] {
-			continue
-		}
-		seen[id] = true
-		hidden = append(hidden, id)
-	}
-	raw, _ := json.Marshal(hidden)
-	if err := a.store.Set(r.Context(), engine.HiddenCardsKey, string(raw)); err != nil {
+	clean := payload.Validate()
+	raw, _ := json.Marshal(clean)
+	if err := a.store.Set(r.Context(), engine.LayoutKey, string(raw)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"hidden_cards": hidden})
+	ov, err := a.engine.Overview(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"layout": ov.Layout})
 }
 
 // validateField rejects values the collectors could not use.

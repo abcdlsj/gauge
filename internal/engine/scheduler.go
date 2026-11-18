@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"math/rand/v2"
@@ -70,30 +69,9 @@ type Overview struct {
 	Accounts    []model.Account      `json:"accounts"`
 	Settings    map[string]bool      `json:"settings"`
 	Cooldown    map[string]time.Time `json:"cooldown"`
-	// HiddenCards lists the "provider/metric" cards the user turned off in the
-	// menu bar and on the overview page.
-	HiddenCards []string `json:"hidden_cards"`
-}
-
-// HiddenCardsKey stores the card visibility as a JSON array of
-// "provider/metric" ids.
-const HiddenCardsKey = "display_hidden_cards"
-
-// defaultHiddenCards applies until the user picks: the catch-all model pool
-// is noise next to the Gemini and Claude pools.
-var defaultHiddenCards = []string{"antigravity/other_models"}
-
-// HiddenCards returns the stored visibility, or the default when unset.
-func (e *Engine) HiddenCards(ctx context.Context) []string {
-	raw, ok, err := e.store.Get(ctx, HiddenCardsKey)
-	if err != nil || !ok {
-		return append([]string(nil), defaultHiddenCards...)
-	}
-	var out []string
-	if json.Unmarshal([]byte(raw), &out) != nil {
-		return append([]string(nil), defaultHiddenCards...)
-	}
-	return out
+	// Layout is the subscription groups and their cards, in the user's
+	// order, with the visibility the menu bar and the overview apply.
+	Layout []LayoutGroup `json:"layout"`
 }
 
 // Start launches one goroutine per provider. Each loop collects immediately,
@@ -363,6 +341,8 @@ func (e *Engine) Overview(ctx context.Context) (Overview, error) {
 		return Overview{}, err
 	}
 
+	accounts := e.deps.Accounts()
+
 	meta := make([]ProviderMeta, 0, len(e.providers))
 	for _, p := range e.providers {
 		meta = append(meta, ProviderMeta{
@@ -394,10 +374,10 @@ func (e *Engine) Overview(ctx context.Context) (Overview, error) {
 		Quotas:      quotas,
 		Runs:        runs,
 		Events:      events,
-		Accounts:    e.deps.Accounts(),
+		Accounts:    accounts,
 		Settings:    settings,
 		Cooldown:    cooldown,
-		HiddenCards: e.HiddenCards(ctx),
+		Layout:      e.Layout(ctx, quotas, accounts),
 	}, nil
 }
 

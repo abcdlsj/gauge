@@ -140,9 +140,13 @@ Optional: `webhook_url` receives a JSON alert when a provider changes state;
 `browser_cookies` (default `chrome`) reuses the local Chrome profile instead of a
 pasted cookie.
 
-The popover stacks every source with a visible card. Each source's settings
-page has a switch per card (`display_hidden_cards`), which also applies to the
-web Overview; the web build adds one tab per source with all of its cards.
+Cards are grouped by subscription: **Gemini Ultra/Pro** (named after the
+account's plan) holds the Antigravity Gemini and Claude pools, Flow credits and
+Colab compute units; Command Code, Open Design and Google Cloud are groups of
+their own. In Settings, drag subscriptions (and the cards inside one) to set
+the menu-bar order, and switch either level off. The layout is stored as
+`display_layout` and also drives the web Overview; the web build adds one tab
+per subscription with all of its cards.
 
 ## Build from source
 

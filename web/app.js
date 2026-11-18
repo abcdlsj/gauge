@@ -125,10 +125,8 @@ async function load() {
 
 /* ---------- views ---------- */
 
-// Routes: #/overview (the default; #/usage is the old name), #/source/<name>
-// for one source, #/activity.
-const SOURCE_ORDER = ['antigravity', 'commandcode', 'opendesign', 'colab', 'google-flow', 'gcp-monitoring', 'gcp-billing'];
-
+// Routes: #/overview (the default; #/usage is the old name), #/source/<group>
+// for one subscription, #/activity.
 function route() {
   const path = location.hash.replace(/^#\/?/, '');
   if (path === 'activity') return { view: 'activity' };
@@ -137,15 +135,38 @@ function route() {
   return { view: 'usage' };
 }
 
-// sourceTabs lists the sources worth a tab: those with readings, or with a
-// run that needs attention. Sources that were never set up stay out.
+function runOf(provider) {
+  return (overview.runs || []).find((r) => r.provider === provider);
+}
+
+const SEVERITY = ['expired_auth', 'error', 'warning', 'running', 'ok', 'unconfigured', 'idle'];
+
+// groupStatus is the worst run state among a subscription's collectors that
+// were set up; unconfigured ones do not drag a working group down.
+function groupStatus(g) {
+  const states = g.providers.map((p) => (runOf(p) || {}).status || 'idle');
+  return states.sort((a, b) => SEVERITY.indexOf(a) - SEVERITY.indexOf(b))[0] || 'idle';
+}
+
+function snapshotOf(it) {
+  return (overview.quotas || []).find((q) => q.provider === it.provider && q.metric === it.metric);
+}
+
+// sourceTabs lists the subscriptions worth a tab: those with cards, or with
+// a collector that needs attention. Never-configured ones stay out.
 function sourceTabs() {
   if (!overview) return [];
-  const withData = new Set((overview.quotas || []).map((q) => q.provider));
-  const runs = new Map((overview.runs || []).map((r) => [r.provider, r]));
-  return (overview.providers || [])
-    .filter((p) => withData.has(p.name) || (runs.get(p.name) && !['unconfigured', 'ok', 'running'].includes(runs.get(p.name).status)))
-    .sort((x, y) => (SOURCE_ORDER.indexOf(x.name) + 1 || 99) - (SOURCE_ORDER.indexOf(y.name) + 1 || 99));
+  return (overview.layout || []).filter((g) => g.items.length
+    || g.providers.some((p) => ['error', 'expired_auth', 'warning'].includes((runOf(p) || {}).status)));
+}
+
+// hiddenSet flattens the layout into the card ids the overview leaves out.
+function hiddenSet() {
+  const out = new Set();
+  for (const g of overview.layout || []) {
+    for (const it of g.items) if (g.hidden || it.hidden) out.add(it.id);
+  }
+  return out;
 }
 
 function renderNav() {
@@ -155,7 +176,7 @@ function renderNav() {
   const link = (href, label, active) => `<a href="${href}"${active ? ' aria-current="page"' : ''}>${esc(label)}</a>`;
   nav.innerHTML = [
     link('#/overview', 'Overview', r.view === 'usage'),
-    ...sourceTabs().map((p) => link(`#/source/${encodeURIComponent(p.name)}`, p.title, r.view === 'source' && r.source === p.name)),
+    ...sourceTabs().map((g) => link(`#/source/${encodeURIComponent(g.id)}`, g.title, r.view === 'source' && r.source === g.id)),
     link('#/activity', 'Activity', r.view === 'activity'),
   ].join('');
 }
@@ -262,7 +283,7 @@ function renderUsage() {
   const root = $('#view-usage');
 
   // The overview shows what the menu bar shows; source tabs show everything.
-  const hidden = new Set(overview.hidden_cards || []);
+  const hidden = hiddenSet();
   const byProvider = new Map();
   for (const q of quotas) {
     if (hidden.has(`${q.provider}/${q.metric}`)) continue;
@@ -273,9 +294,12 @@ function renderUsage() {
   const blocks = [];
   const compact = [];
 
-  const ordered = (overview.providers || []).slice()
-    .sort((x, y) => (SOURCE_ORDER.indexOf(x.name) + 1 || 99) - (SOURCE_ORDER.indexOf(y.name) + 1 || 99));
-  for (const p of ordered) {
+  if (!isDesktop()) {
+    renderGroups(root);
+    return;
+  }
+
+  for (const p of overview.providers || []) {
     const items = (byProvider.get(p.name) || []).slice().sort(compareSnapshots);
     const run = runs.get(p.name);
 
@@ -412,61 +436,103 @@ function renderCompactCard(provider, sn) {
 }
 
 function groupHead(provider, count) {
-  const run = (overview.runs || []).find((r) => r.provider === provider.name);
+  const run = runOf(provider.name);
   const status = run ? run.status : 'idle';
-  const title = isDesktop()
-    ? esc(provider.title)
-    : `<a href="#/source/${encodeURIComponent(provider.name)}">${esc(provider.title)}</a>`;
   return `
     <div class="group-head">
-      <h2><span class="dot ${esc(status)}"></span>${title}</h2>
+      <h2><span class="dot ${esc(status)}"></span>${esc(provider.title)}</h2>
     </div>`;
 }
 
-// settingsSection maps a provider onto its page in settings.html.
-function settingsSection(name) {
-  return name.startsWith('gcp-') ? 'gcp' : name;
+// problemCards are the notices for a subscription's collectors whose last
+// run failed, so a broken source is visible even without readings.
+function problemCards(g, onlyWithoutData) {
+  return g.providers.map((p) => {
+    const run = runOf(p);
+    if (!run || !run.error || ['ok', 'running', 'unconfigured'].includes(run.status)) return '';
+    if (onlyWithoutData && (overview.quotas || []).some((q) => q.provider === p)) return '';
+    const title = ((overview.providers || []).find((x) => x.name === p) || {}).title || p;
+    return `
+      <article class="card notice" data-state="${esc(run.status)}">
+        <div class="card-top"><span class="card-metric">${esc(title)}</span><span class="chip ${esc(run.status)}">${esc(labelForStatus(run.status))}</span></div>
+        <p class="notice-text" title="${esc(run.error)}">${esc(trim(run.error, 260))}</p>
+      </article>`;
+  }).join('');
 }
 
-// renderSource is one source's tab: its state, every card it produced
-// (hidden ones included) and the actions that apply to it.
-function renderSource(name) {
+// groupNotes are the text-only rows (Colab accelerators) of the collectors
+// whose cards are on screen.
+function groupNotes(g, providers) {
+  return (overview.quotas || [])
+    .filter((q) => q.kind === 'note' && providers.has(q.provider) && g.providers.includes(q.provider))
+    .map(renderGroupNote).join('');
+}
+
+function cardFor(it) {
+  const sn = snapshotOf(it);
+  return sn ? renderCard({ ...sn, label: it.label }) : '';
+}
+
+// renderGroups is the browser overview: visible subscriptions in the user's
+// order, each with its visible cards in order.
+function renderGroups(root) {
+  const blocks = (overview.layout || []).filter((g) => !g.hidden).map((g) => {
+    const items = g.items.filter((it) => !it.hidden && snapshotOf(it));
+    const problems = problemCards(g, true);
+    if (!items.length && !problems) return '';
+    const status = groupStatus(g);
+    return `
+      <section class="group" id="group-${esc(g.id)}">
+        <div class="group-head">
+          <h2><span class="dot ${esc(status)}"></span><a href="#/source/${encodeURIComponent(g.id)}">${esc(g.title)}</a></h2>
+          ${g.detail ? `<span class="hint">${esc(g.detail)}</span>` : ''}
+        </div>
+        ${groupNotes(g, new Set(items.map((it) => it.provider)))}
+        <div class="grid">${problems}${items.map(cardFor).join('')}</div>
+      </section>`;
+  }).filter(Boolean);
+
+  root.innerHTML = blocks.length
+    ? blocks.join('')
+    : everLoaded
+      ? (overview.quotas || []).length
+        ? '<div class="empty"><b>Everything is hidden</b>Turn subscriptions or cards back on in Settings.</div>'
+        : '<div class="empty"><b>No snapshots yet</b>Collectors are running; readings appear after the first successful poll.</div>'
+      : skeletonUsage();
+}
+
+// renderSource is one subscription's tab: every card it has (hidden ones
+// included), the state of each collector, and its actions.
+function renderSource(id) {
   const root = $('#view-source');
   if (!root || !overview) return;
-  const p = (overview.providers || []).find((x) => x.name === name);
-  if (!p) {
-    root.innerHTML = `<div class="empty"><b>Unknown source</b>${esc(name)} is not collected by this panel.</div>`;
+  const g = (overview.layout || []).find((x) => x.id === id);
+  if (!g) {
+    root.innerHTML = `<div class="empty"><b>Unknown subscription</b>${esc(id)} is not collected by this panel.</div>`;
     return;
   }
-  const run = (overview.runs || []).find((r) => r.provider === name);
-  const status = run ? run.status : 'idle';
-  const items = (overview.quotas || []).filter((q) => q.provider === name).sort(compareSnapshots);
-  const notes = items.filter((i) => i.kind === 'note');
-  const cards = items.filter((i) => i.kind !== 'note');
-  const meta = [
-    `every ${fmtDuration(p.interval_seconds)}`,
-    run && run.last_run ? `last <b data-ago="${run.last_run}"></b>` : 'not run yet',
-    run && run.next_run ? `next <b data-in="${run.next_run}"></b>` : '',
-  ].filter(Boolean).join(' · ');
-  const problem = run && run.error && status !== 'ok'
-    ? `<article class="card notice" data-state="${esc(status)}">
-         <div class="card-top"><span class="card-metric">last run</span><span class="chip ${esc(status)}">${esc(labelForStatus(status))}</span></div>
-         <p class="notice-text">${esc(trim(run.error, 400))}</p>
-       </article>`
-    : '';
+  const runs = g.providers.map((p) => {
+    const run = runOf(p);
+    const meta = (overview.providers || []).find((x) => x.name === p) || { title: p, interval_seconds: 0 };
+    const status = run ? run.status : 'idle';
+    const when = run && run.last_run ? `last <b data-ago="${run.last_run}"></b>` : 'not run yet';
+    const next = run && run.next_run ? ` · next <b data-in="${run.next_run}"></b>` : '';
+    return `<span class="source-run"><span class="dot ${esc(status)}"></span>${esc(meta.title)} · every ${fmtDuration(meta.interval_seconds)} · ${when}${next}</span>`;
+  }).join('');
+  const items = g.items.filter((it) => snapshotOf(it));
   root.innerHTML = `
     <section class="group">
       <div class="group-head source-head">
-        <h2><span class="dot ${esc(status)}"></span>${esc(p.title)}</h2>
-        <span class="hint">${meta}</span>
+        <h2><span class="dot ${esc(groupStatus(g))}"></span>${esc(g.title)}</h2>
+        ${g.detail ? `<span class="hint">${esc(g.detail)}</span>` : ''}
         <span class="source-actions">
-          <a class="btn" href="/settings.html#${encodeURIComponent(settingsSection(name))}">Settings</a>
-          <button class="btn" type="button" data-provider="${esc(name)}">Refresh</button>
+          <a class="btn" href="/settings.html#${encodeURIComponent(g.id)}">Settings</a>
+          <button class="btn" type="button" data-providers="${esc(g.providers.join(','))}">Refresh</button>
         </span>
       </div>
-      ${problem ? `<div class="grid">${problem}</div>` : ''}
-      ${notes.map(renderGroupNote).join('')}
-      ${cards.length ? `<div class="grid">${cards.map(renderCard).join('')}</div>` : problem ? '' : '<div class="empty"><b>No readings yet</b>They appear after the first successful poll.</div>'}
+      <div class="source-runs">${runs}</div>
+      ${groupNotes(g, new Set(g.providers))}
+      ${problemCards(g, false) || items.length ? `<div class="grid">${problemCards(g, false)}${items.map(cardFor).join('')}</div>` : '<div class="empty"><b>No readings yet</b>They appear after the first successful poll.</div>'}
     </section>`;
   refreshTickers();
 }
@@ -652,6 +718,18 @@ async function refreshProvider(name, button) {
   }
 }
 
+// refreshGroup refreshes every collector of a subscription and reports the
+// first failure.
+async function refreshGroup(names, button) {
+  button.disabled = true;
+  const results = await Promise.all(names.map((n) =>
+    api(`/api/refresh/${encodeURIComponent(n)}`, { method: 'POST' }).catch((err) => ({ status: err.status === 429 ? 'cooldown' : 'error', error: err.message, provider: n }))));
+  const bad = results.find((r) => r && r.status && !['ok', 'running'].includes(r.status));
+  toast(bad ? (bad.status === 'cooldown' ? 'Cooling down, try again in a minute' : `${bad.provider}: ${trim(bad.error || bad.status, 80)}`) : 'Refreshed');
+  button.disabled = false;
+  await load();
+}
+
 async function refreshAll(button) {
   button.disabled = true;
   const label = button.textContent;
@@ -677,8 +755,10 @@ $('#refresh-all').addEventListener('click', (e) => refreshAll(e.currentTarget));
 for (const id of ['#view-usage', '#view-source']) {
   const el = $(id);
   if (el) el.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-provider]');
-    if (btn) refreshProvider(btn.dataset.provider, btn);
+    const btn = e.target.closest('button[data-provider], button[data-providers]');
+    if (!btn) return;
+    if (btn.dataset.provider) refreshProvider(btn.dataset.provider, btn);
+    else refreshGroup(btn.dataset.providers.split(','), btn);
   });
 }
 

@@ -38,6 +38,31 @@ def now(offset: timedelta = timedelta()) -> str:
     return (datetime.now(timezone.utc) + offset).isoformat().replace("+00:00", "Z")
 
 
+def fixture_layout() -> list:
+    """The resolved /api/overview layout: subscriptions, then their cards."""
+    def item(id_, label, hidden=False):
+        provider, metric = id_.split("/")
+        return {"id": id_, "label": label, "provider": provider, "metric": metric, "hidden": hidden}
+
+    return [
+        {"id": "google", "title": "Gemini Ultra", "detail": "Ultra 5x", "hidden": False,
+         "providers": ["antigravity", "google-flow", "colab"],
+         "items": [
+             item("antigravity/gemini_models", "Antigravity · Gemini"),
+             item("antigravity/claude_models", "Antigravity · Claude & GPT"),
+             item("antigravity/other_models", "Antigravity · other models", True),
+             item("google-flow/flow_credits", "Flow credits"),
+             item("colab/compute_units", "Colab compute units"),
+         ]},
+        {"id": "commandcode", "title": "Command Code", "hidden": False, "providers": ["commandcode"],
+         "items": [item("commandcode/plan", "Plan"), item("commandcode/credits", "Credits", True)]},
+        {"id": "opendesign", "title": "Open Design", "hidden": False, "providers": ["opendesign"],
+         "items": [item("opendesign/plan", "Design Plan"), item("opendesign/balance", "Balance")]},
+        {"id": "gcp", "title": "Google Cloud", "hidden": True, "providers": ["gcp-monitoring", "gcp-billing"],
+         "items": [item("gcp-billing/month_to_date_cost", "Month to date")]},
+    ]
+
+
 def fixture_overview() -> dict:
     t = now()
     return {
@@ -52,7 +77,7 @@ def fixture_overview() -> dict:
             {"name": "gcp-billing", "title": "GCP billing", "interval_seconds": 21600},
             {"name": "gcp-monitoring", "title": "GCP monitoring", "interval_seconds": 600},
         ],
-        "hidden_cards": ["antigravity/other_models", "commandcode/credits", "gcp-billing/month_to_date_cost"],
+        "layout": fixture_layout(),
         "runs": [
             {"provider": "antigravity", "status": "ok", "last_run": now(-timedelta(minutes=2)), "duration_ms": 420},
             {"provider": "commandcode", "status": "ok", "last_run": now(-timedelta(minutes=1)), "duration_ms": 210},
@@ -135,11 +160,16 @@ def fixture_settings() -> dict:
 
     return {
         "sections": [
-            {"id": "antigravity", "title": "Antigravity", "providers": ["antigravity"],
-             "summary": "Gemini and Claude model quota. Read from the running IDE first; the token is only needed when it is closed.",
+            {"id": "google", "title": "Google AI", "providers": ["antigravity", "google-flow", "colab"],
+             "summary": "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
              "fields": [
-                 field("antigravity_refresh_token", "Refresh token", "secret", "••••x9Qa", optional=True, help="Minted by Sign in with Google."),
-                 interval("antigravity", "Refresh every", 5, 5),
+                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Only needed when the IDE is closed. Minted by Sign in with Google."),
+                 field("browser_cookies", "Read cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Flow and Colab reuse the Chrome sign-in. One keychain prompt."),
+                 field("flow_cookie", "Flow cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
+                 field("colab_cookie", "Colab cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
+                 interval("antigravity", "Antigravity", 5, 5),
+                 interval("google-flow", "Flow", 30, 30),
+                 interval("colab", "Colab", 30, 30, "45"),
              ]},
             {"id": "commandcode", "title": "Command Code", "providers": ["commandcode"], "summary": "5-hour and weekly plan windows.",
              "fields": [
@@ -150,16 +180,6 @@ def fixture_settings() -> dict:
              "fields": [
                  field("opendesign_control_key", "Control key", "secret", optional=True, help="Leave empty to use the Open Design CLI sign-in (~/.amr/config.json)."),
                  interval("opendesign", "Refresh every", 5, 2),
-             ]},
-            {"id": "colab", "title": "Colab", "providers": ["colab"], "summary": "Compute-unit balance.",
-             "fields": [
-                 field("colab_cookie", "Pasted cookie", "secret", multiline=True, optional=True, placeholder="SID=…; HSID=…", help="Only used when Chrome cookies are off."),
-                 interval("colab", "Refresh every", 30, 30, "45"),
-             ]},
-            {"id": "google-flow", "title": "Google Flow", "providers": ["google-flow"], "summary": "Video credit balance.",
-             "fields": [
-                 field("flow_cookie", "Pasted cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
-                 interval("google-flow", "Refresh every", 30, 30),
              ]},
             {"id": "gcp", "title": "Google Cloud", "providers": ["gcp-billing", "gcp-monitoring"],
              "summary": "Billing-export credits and Gemini API call counts.",
@@ -175,7 +195,6 @@ def fixture_settings() -> dict:
              ]},
             {"id": "general", "title": "General", "providers": [],
              "fields": [
-                 field("browser_cookies", "Read Google cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Used by Colab and Flow. One keychain prompt."),
                  field("webhook_url", "Alert webhook", "secret", optional=True, help="Receives JSON when a source changes state."),
                  field("app_icon", "Icon", "select", options=["gauge", "classic"], default="gauge", help="Menu bar and window mark."),
              ]},
@@ -403,10 +422,10 @@ def main() -> None:
         shot(f"{base}/popover.html?settings=general&theme=dark", OUT / "popover-settings-general.png", 372, 600)
         shot(f"{base}/popover.html?settings=general&theme=light", OUT / "popover-settings-general-light.png", 372, 600)
         shot(f"{base}/settings.html?theme=light#general", OUT / "web-settings-general.png", 1100, 700, 1)
-        shot(f"{base}/settings.html?theme=light#gcp", OUT / "web-settings.png", 1100, 900, 1)
-        shot(f"{base}/popover.html?settings=commandcode&theme=light", OUT / "popover-settings-source.png", 372, 700)
+        shot(f"{base}/settings.html?theme=light#google", OUT / "web-settings.png", 1100, 1200, 1)
+        shot(f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png", 372, 1100)
         shot(f"{base}/index.html?theme=light#/overview", OUT / "web-overview.png", 1100, 1300, 1)
-        shot(f"{base}/index.html?theme=dark#/source/commandcode", OUT / "web-source.png", 1100, 700, 1)
+        shot(f"{base}/index.html?theme=dark#/source/google", OUT / "web-source.png", 1100, 900, 1)
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 900, 536)
         httpd.shutdown()

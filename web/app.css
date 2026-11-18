@@ -269,6 +269,9 @@ body {
 .source-head .hint { font-size: 14px; }
 .source-actions { margin-left: auto; display: flex; gap: 8px; }
 .source-actions .btn { text-decoration: none; }
+.source-runs { display: flex; flex-direction: column; gap: 3px; margin: -4px 0 14px; font-size: 14px; color: var(--faint); }
+.source-run { display: flex; align-items: center; gap: 8px; }
+.source-run b { font-weight: 500; color: var(--muted); }
 
 /* ---------- quota groups ---------- */
 

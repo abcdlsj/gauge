@@ -127,9 +127,6 @@ function meter(pct, tone) {
   return `<div class="meter" data-tone="${esc(tone)}" role="img" aria-label="${pct.toFixed(0)}% remaining">${html}</div>`;
 }
 
-// Sources stack top to bottom in this order; anything else follows.
-const SOURCE_ORDER = ['antigravity', 'commandcode', 'opendesign', 'colab', 'google-flow', 'gcp-monitoring', 'gcp-billing'];
-
 // tint is the meter colour of a card: the model family for Antigravity, the
 // source for everything else.
 function tintFor(sn) {
@@ -154,19 +151,18 @@ const shortNames = {
   month_to_date_cost: 'Cost',
 };
 
-// renderAccountLine is the Antigravity identity: avatar, name, email and the
-// subscription tier, one line under the source title.
-function renderAccountLine(accounts) {
+// renderAccountLine is the Google identity under the subscription title:
+// avatar, name, email and the exact plan.
+function renderAccountLine(accounts, detail) {
   const a = (accounts || [])[0];
   if (!a) return '';
   const tier = a.tier || '';
   const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
-  const label = kind === 'ultra' ? 'Google AI Ultra' : kind === 'pro' ? 'Google AI Pro' : tier;
   return `
     <div class="src-account">
       <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
       <span class="who"><b>${esc(a.name || a.email || '')}</b>${a.name && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
-      ${label ? `<span class="plan ${kind === 'ultra' ? '' : kind}" title="${esc(tier)}">${esc(label)}</span>` : ''}
+      ${detail ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(detail)}</span>` : ''}
     </div>`;
 }
 
@@ -186,55 +182,54 @@ function renderWindow(series) {
     </div>`;
 }
 
-// renderPool is one card with quota windows: Gemini models, a Command Code
-// plan. The family line is only drawn when a source has several pools.
-function renderPool(sn, labelled) {
+// renderPool is one card with quota windows (an Antigravity model pool, a
+// Command Code plan), titled with the card label.
+function renderPool(sn, label) {
   const series = sn.series && sn.series.length
     ? sn.series
     : [{ label: 'current', remaining: sn.remaining, total: sn.total, unit: sn.unit, reset_at: sn.reset_at }];
   const tint = tintFor(sn);
-  const head = labelled
-    ? `<div class="fam-head"><span class="fam-logo">${familyIcons[tint] || ''}</span><span class="fam-name">${esc(sn.label)}</span></div>`
+  const head = label
+    ? `<div class="fam-head">${familyIcons[tint] ? `<span class="fam-logo">${familyIcons[tint]}</span>` : ''}<span class="fam-name">${esc(label)}</span></div>`
     : '';
   return `<div class="fam" data-family="${esc(tint)}">${head}${series.map(renderWindow).join('')}</div>`;
 }
 
-function renderMini(sn) {
+function renderMini(sn, label) {
   return `
     <div class="mini">
-      <span class="label">${esc(shortNames[sn.metric] || sn.label)}</span>
+      <span class="label">${esc(label)}</span>
       <span class="spacer"></span>
       <span class="note">${sn.reset_at ? `resets in <b data-in="${sn.reset_at}"></b>` : `<b data-ago="${sn.updated_at}"></b>`}</span>
       <span class="value">${fmtNumber(sn.remaining, sn.unit)}<span>${esc(sn.unit || '')}</span></span>
     </div>`;
 }
 
-// renderSources stacks every source that has a visible card. Pools (cards
-// with windows) come first inside a source, single numbers follow as rows.
-function renderSources(overview) {
-  const hidden = new Set(overview.hidden_cards || []);
-  const titles = new Map((overview.providers || []).map((p) => [p.name, p.title]));
-  const visible = (overview.quotas || []).filter((q) => q.kind !== 'note' && !hidden.has(`${q.provider}/${q.metric}`));
-  const names = [...new Set(visible.map((q) => q.provider))]
-    .sort((x, y) => (SOURCE_ORDER.indexOf(x) + 1 || 99) - (SOURCE_ORDER.indexOf(y) + 1 || 99));
-
-  return names.map((name) => {
-    const cards = visible.filter((q) => q.provider === name);
-    const pools = cards.filter((q) => q.series && q.series.length);
-    const minis = cards.filter((q) => !(q.series && q.series.length));
-    const user = name !== 'antigravity' && cards[0].account
-      ? `<span class="src-user">${esc(cards[0].account.split('@')[0])}</span>` : '';
-    const stale = cards.some((q) => q.status === 'error' || q.status === 'expired_auth');
+// renderGroups stacks the visible subscriptions in the user's order; inside
+// each, the visible cards in the user's order.
+function renderGroups(overview) {
+  const quotas = overview.quotas || [];
+  const find = (it) => quotas.find((q) => q.provider === it.provider && q.metric === it.metric);
+  return (overview.layout || []).filter((g) => !g.hidden).map((g) => {
+    const cards = g.items.filter((it) => !it.hidden).map((it) => ({ it, sn: find(it) })).filter((c) => c.sn);
+    if (!cards.length) return '';
+    const pools = cards.filter((c) => c.sn.series && c.sn.series.length).length;
+    const user = g.id !== 'google' && cards[0].sn.account
+      ? `<span class="src-user">${esc(cards[0].sn.account.split('@')[0])}</span>` : '';
+    const stale = cards.some((c) => c.sn.status === 'error' || c.sn.status === 'expired_auth');
+    const body = cards.map(({ it, sn }) => (sn.series && sn.series.length
+      // A lone plan card needs no label under the subscription title.
+      ? renderPool(sn, pools > 1 || cards.length > 1 ? it.label : '')
+      : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
     return `
-      <section class="src" data-provider="${esc(name)}">
+      <section class="src" data-group="${esc(g.id)}">
         <div class="src-head">
-          <span class="src-name">${esc(titles.get(name) || name)}</span>
+          <span class="src-name">${esc(g.title)}</span>
           ${stale ? '<span class="src-stale" title="Last refresh failed; numbers may be old">stale</span>' : ''}
           ${user}
         </div>
-        ${name === 'antigravity' ? renderAccountLine(overview.accounts) : ''}
-        ${pools.map((sn) => renderPool(sn, pools.length > 1)).join('')}
-        ${minis.map(renderMini).join('')}
+        ${g.id === 'google' ? renderAccountLine(overview.accounts, g.detail) : ''}
+        ${body}
       </section>`;
   }).join('');
 }
@@ -242,7 +237,7 @@ function renderSources(overview) {
 function render(overview) {
   const quotas = overview.quotas || [];
   const root = $('#pop-body');
-  const sources = renderSources(overview);
+  const sources = renderGroups(overview);
   root.innerHTML = sources
     || (quotas.length
       ? '<div class="mini notice">Every card is hidden. Turn some on in Settings.</div>'
