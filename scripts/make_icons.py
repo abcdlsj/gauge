@@ -43,7 +43,7 @@ GRID = 22.0
 
 # The menu bar hands a template icon a 22pt box and adds no padding of its
 # own, so the tray glyph is inset a little instead of filling it edge to edge.
-TRAY_SCALE = 0.9
+TRAY_SCALE = 0.85
 
 # ---------------------------------------------------------------- primitives
 #
