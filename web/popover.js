@@ -127,10 +127,16 @@ function meter(pct, tone) {
   return `<div class="meter" data-tone="${esc(tone)}" role="img" aria-label="${pct.toFixed(0)}% remaining">${html}</div>`;
 }
 
+// metricFamily strips the "@N" slot suffix the collector appends to extra
+// accounts, so "claude_models@2" still reads as the claude family.
+function metricFamily(metric) {
+  return String(metric || '').split('@')[0];
+}
+
 // tint is the meter colour of a card: the model family for Antigravity, the
 // source for everything else.
 function tintFor(sn) {
-  if (sn.metric === 'claude_models') return 'claude';
+  if (metricFamily(sn.metric) === 'claude_models') return 'claude';
   if (sn.provider === 'commandcode' || sn.provider === 'opendesign') return sn.provider;
   return 'gemini';
 }

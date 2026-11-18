@@ -38,6 +38,15 @@
   font-weight: 600;
   color: var(--faint);
 }
+/* a caption with a page-level action on its right (e.g. Add account) */
+.sx-caption-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: var(--sx-pad-x);
+}
+.sx-caption-row .sx-caption { margin: 0 0 5px var(--sx-pad-x); }
 .sx-card {
   background: var(--surface);
   border: 1px solid var(--line);

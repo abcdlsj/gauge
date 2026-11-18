@@ -422,24 +422,32 @@
     root.addEventListener('pointercancel', endDrag);
 
     // renderAccounts lists the identities behind the Google groups. Order and
-    // visibility of each identity live in the subscription list, one row each.
+    // visibility of each identity live in the subscription list, one row each;
+    // the identity this page belongs to is lifted to the top.
     function renderAccounts() {
       const accounts = (overview && overview.accounts) || [];
-      const rows = accounts.map((a) => `
+      const pageSlot = (groupOf(current) || {}).slot;
+      const ordered = pageSlot
+        ? accounts.slice().sort((a, b) => (a.slot === pageSlot ? -1 : b.slot === pageSlot ? 1 : a.slot - b.slot))
+        : accounts;
+      const rows = ordered.map((a) => `
         <div class="sx-row">
           <span class="sx-avatar"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
           <span class="sx-label"><b>${esc(a.name || a.email)}</b><span class="sx-help">${esc(a.email || '')}${a.tier ? ' · ' + esc(a.tier) : ''}</span></span>
           ${a.slot > 1 && opts.oauth ? `<button class="sx-btn danger" type="button" data-remove-account="${a.slot}">Remove</button>` : ''}
         </div>`).join('');
+      if (!rows && !opts.oauth) return '';
+      // Adding an identity is a page action, not a row in the account list.
       const add = opts.oauth
-        ? `<div class="sx-row"><span class="sx-label"><span class="sx-help">Signs in through Google; the token is stored encrypted on this host.</span></span>
-             <button class="sx-btn" type="button" data-oauth="${accounts.length ? 'add' : 'primary'}">${accounts.length ? 'Add account' : 'Sign in with Google'}</button></div>`
+        ? `<button class="sx-btn" type="button" data-oauth="${accounts.length ? 'add' : 'primary'}">${accounts.length ? 'Add account' : 'Sign in with Google'}</button>`
         : '';
-      if (!rows && !add) return '';
       return `
         <div class="sx-group">
-          <h3 class="sx-caption">Google accounts</h3>
-          <div class="sx-card">${rows || '<div class="sx-row"><span class="sx-help">No account yet.</span></div>'}${add}</div>
+          <div class="sx-caption-row">
+            <h3 class="sx-caption">Google accounts</h3>
+            ${add}
+          </div>
+          <div class="sx-card">${rows || '<div class="sx-row"><span class="sx-help">No account yet. Sign in to add one.</span></div>'}</div>
         </div>`;
     }
 
