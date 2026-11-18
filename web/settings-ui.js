@@ -98,6 +98,7 @@
       if (layout === 'split') current = id || current || (sections[0] && sections[0].id);
       else current = id || null;
       editing = null;
+      shown = undefined;
       render();
     }
 
@@ -135,15 +136,27 @@
 
     /* ---------- render ---------- */
 
+    // render redraws the current page. A redraw after a save keeps the scroll
+    // position; only moving to another page tells the host (onNavigate).
+    let shown;
     function render() {
       const sec = current && section(current);
-      if (opts.onNavigate) opts.onNavigate(sec ? sec.title : null);
+      const moved = shown !== current;
+      shown = current;
+      const scroller = opts.scroller || root;
+      const top = scroller.scrollTop;
       if (layout === 'split') {
         root.innerHTML = `
           <nav class="sx-index">${renderIndex()}</nav>
           <div class="sx-detail">${sec ? renderDetail(sec) : ''}</div>`;
       } else {
         root.innerHTML = sec ? `<div class="sx-detail">${renderDetail(sec)}</div>` : `<nav class="sx-index">${renderIndex()}</nav>`;
+      }
+      if (moved) {
+        scroller.scrollTop = 0;
+        if (opts.onNavigate) opts.onNavigate(sec ? sec.title : null);
+      } else {
+        scroller.scrollTop = top;
       }
     }
 
@@ -528,7 +541,7 @@
         const results = await Promise.all(names.map((n) =>
           api(`/api/refresh/${encodeURIComponent(n)}`, { method: 'POST' }).catch((err) => ({ error: err.message }))));
         const bad = results.find((r) => r && r.error);
-        toast(bad ? bad.error : 'Refreshed');
+        toast(bad ? 'Still failing; the status above has the details' : 'Refreshed');
         if (opts.onSaved) opts.onSaved();
         await reloadSection();
         return;

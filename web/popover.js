@@ -45,7 +45,8 @@ function refreshTickers() {
 let timer = null;
 function toast(text) {
   const el = $('#toast');
-  el.textContent = text;
+  text = String(text).replace(/\s+/g, ' ').trim();
+  el.textContent = text.length > 90 ? text.slice(0, 89) + '…' : text;
   el.hidden = false;
   clearTimeout(timer);
   timer = setTimeout(() => { el.hidden = true; }, 2400);
@@ -273,8 +274,6 @@ const settingsUI = GaugeSettings.create({
   toast,
   onNavigate(title) {
     $('#settings-title').textContent = title || 'Settings';
-    $('#settings-root').scrollTop = 0;
-    fitWindow();
   },
   onTheme(theme) {
     currentTheme = theme;
@@ -283,7 +282,14 @@ const settingsUI = GaugeSettings.create({
   onSaved() { load(); },
 });
 
+// While settings are open the window keeps one height: at least what the
+// list had, and never less than SETTINGS_MIN_HEIGHT. Pages scroll inside it,
+// so moving between them or saving does not resize (and jump) the window.
+const SETTINGS_MIN_HEIGHT = 600;
+let settingsHeight = 0;
+
 async function openSettings() {
+  settingsHeight = Math.max(SETTINGS_MIN_HEIGHT, Math.ceil(window.innerHeight));
   $('#list-scroll').hidden = true;
   $('#view-settings').hidden = false;
   document.body.classList.add('settings-open');
@@ -292,6 +298,7 @@ async function openSettings() {
 }
 
 function closeSettings() {
+  settingsHeight = 0;
   $('#view-settings').hidden = true;
   $('#list-scroll').hidden = false;
   document.body.classList.remove('settings-open');
@@ -366,7 +373,7 @@ function fitWindow() {
   fitTimer = setTimeout(() => {
     const panel = document.querySelector('.panel');
     if (!panel) return;
-    const height = naturalHeight(panel);
+    const height = settingsHeight || naturalHeight(panel);
     syncScrollDepth();
     fetch('/api/ui/height', {
       method: 'POST',
