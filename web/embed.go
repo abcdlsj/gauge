@@ -3,7 +3,8 @@ package web
 
 import "embed"
 
-// FS holds the static assets served at /.
+// FS holds the static assets served at /. Every file the pages load must be
+// listed; embed_test.go fails when one is missing.
 //
-//go:embed index.html settings.html shell.html popover.html app.css desktop.css popover.css app.js settings.js popover.js mark.svg
+//go:embed index.html settings.html shell.html popover.html app.css desktop.css popover.css settings-ui.css app.js settings.js popover.js settings-ui.js mark.svg
 var FS embed.FS
