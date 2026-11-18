@@ -60,9 +60,11 @@ app: $(APPICON)
 	@codesign --force --deep --sign - "$(APP)"
 	@echo "built $(APP) $(SEMVER) ($(BUILDNUM)) $(shell lipo -archs "$(APP)/Contents/MacOS/Gauge")"
 
-# The app icon is drawn by the script; the tray PNGs it also writes are
-# committed because main.go embeds them.
-$(APPICON): scripts/make_icons.py
+# The app icon is drawn by the script and committed (a .icns cannot be built
+# without a rasteriser, and CI has none), so this only fills a missing file.
+# Run `make icons` after changing the geometry. The tray PNGs the script writes
+# are committed too, because main.go embeds them.
+$(APPICON):
 	python3 scripts/make_icons.py
 
 icons:

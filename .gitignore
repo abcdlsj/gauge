@@ -1,5 +1,6 @@
 bin/
-build/icon/
+build/icon/*
+!build/icon/AppIcon.icns
 build/dist/
 build/screenshots/
 quota.db

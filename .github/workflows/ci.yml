@@ -48,8 +48,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: svg rasteriser for scripts/make_icons.py
-        run: brew install librsvg
       - run: make dist
       - name: check the bundle
         run: |

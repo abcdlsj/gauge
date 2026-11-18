@@ -159,8 +159,10 @@ make test          # go test ./...
 make build         # headless binary only, CGO-free
 ```
 
-`make app` needs the icon, which `scripts/make_icons.py` draws — one geometry in
-SVG that also produces the committed menu-bar template and `web/mark.svg`.
+The icon comes from `scripts/make_icons.py` — one geometry in SVG that also
+produces the menu-bar template and `web/mark.svg`. Its output is committed
+(`build/icon/AppIcon.icns`, `cmd/gauge/assets/*`, `web/mark*.svg`), so a build
+needs no rasteriser; run `make icons` after changing the geometry.
 
 ## Releasing
 
