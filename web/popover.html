@@ -17,6 +17,7 @@
 </script>
 <link rel="stylesheet" href="/app.css" />
 <link rel="stylesheet" href="/popover.css" />
+<link rel="stylesheet" href="/settings-ui.css" />
 </head>
 <body>
 <div class="panel">
@@ -53,13 +54,11 @@
         <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M11.5 5.5 7 10l4.5 4.5" />
       </svg>
     </button>
-    <span class="set-title">Settings</span>
-    <button class="set-save" id="save-settings" type="button">Save</button>
+    <span class="set-title" id="settings-title">Settings</span>
   </div>
   <div class="scroll-wrap">
-    <form id="settings-form" class="set-body scroll-area"><div id="settings-fields"></div></form>
+    <div id="settings-root" class="set-body scroll-area"></div>
   </div>
-  <p class="set-note">Leave a field blank to keep its value. Secrets stay encrypted on this Mac.</p>
 </section>
 
 <footer class="pop-foot">
@@ -68,6 +67,7 @@
 
 <div class="toast" id="toast" hidden></div>
 </div>
+<script src="/settings-ui.js"></script>
 <script src="/popover.js"></script>
 </body>
 </html>

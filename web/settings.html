@@ -7,6 +7,7 @@
 <title>Gauge · Settings</title>
 <link rel="icon" href="/mark.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/settings-ui.css" />
 </head>
 <body>
 <div class="shell">
@@ -39,34 +40,16 @@
 
   <div class="banner" id="banner" hidden></div>
 
-  <section class="settings-page" id="accounts-panel" hidden>
-    <div class="panel-head">
-      <h2>Google accounts</h2>
-      <span class="hint">quota is read per account</span>
-    </div>
-    <div id="accounts-list"></div>
-    <div class="account-actions">
-      <button class="btn" type="button" id="add-account">Add Google account</button>
-      <span class="hint">signs in through Google; the token is stored encrypted on this host</span>
-    </div>
-  </section>
-
-  <form id="settings-form" class="settings-page">
-    <p class="note">Leave a field blank to keep its current value. Secrets are encrypted at rest with AES-GCM and never leave this host.</p>
-    <div id="settings-fields"></div>
-    <div class="form-foot">
-      <button class="btn primary" type="submit">Save settings</button>
-      <span class="hint" id="settings-status"></span>
-    </div>
-  </form>
+  <main id="settings-root" class="settings-page"></main>
 
   <footer>
     <span>Read-only panel · one binary · SQLite snapshots</span>
-    <span>changes apply on the next poll</span>
+    <span>changes save as you go · secrets are encrypted at rest</span>
   </footer>
 </div>
 
 <div class="toast" id="toast" hidden></div>
+<script src="/settings-ui.js"></script>
 <script src="/settings.js"></script>
 </body>
 </html>

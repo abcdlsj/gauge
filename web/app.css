@@ -156,32 +156,6 @@ body {
   vertical-align: 2px;
 }
 
-/* settings: connected accounts */
-.account-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-.account-card:last-of-type { border-bottom: none; }
-.account-card .avatar { width: 38px; height: 38px; }
-.account-card .who { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.account-card .who b { font-size: 14px; font-weight: 550; }
-.account-card .who span { font-size: 12.5px; color: var(--faint); }
-.account-card .plan { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.brand-badge {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 3px 9px;
-  border-radius: 999px;
-  color: #fff;
-  background: linear-gradient(100deg, #4285f4, #9b72cb 55%, #d96570);
-}
-.brand-badge.pro { background: linear-gradient(100deg, #1a73e8, #34a853); }
-.brand-badge.free { background: var(--surface-2); color: var(--muted); }
-.account-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .account-actions .btn { background: var(--surface-2); }
 .account-actions .btn:hover { background: var(--line); }
 .actions .btn.icon { text-decoration: none; }
@@ -504,14 +478,7 @@ body {
 
 /* ---------- settings page ---------- */
 
-.settings-page {
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 22px 24px 20px;
-}
-.settings-page .note { margin: 0 0 20px; }
-.settings-page .sgroup { margin-bottom: 26px; }
-.settings-page .sgroup:last-of-type { margin-bottom: 8px; }
+.settings-page { min-width: 0; }
 
 .card-foot {
   display: flex;
@@ -614,75 +581,6 @@ body {
 .log li.error .msg { color: var(--danger); }
 .log li.warning .msg { color: var(--warn); }
 .log .empty { color: var(--faint); }
-
-/* ---------- settings ---------- */
-
-.note { margin: 0 0 16px; font-size: 14px; color: var(--faint); }
-
-.sgroup {
-  border-radius: 10px;
-}
-.sgroup + .sgroup { margin-top: 2px; }
-.sgroup > summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  cursor: pointer;
-  list-style: none;
-  border-bottom: 1px solid var(--line);
-}
-.sgroup > summary::-webkit-details-marker { display: none; }
-.sgroup h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.sgroup-state { font-size: 14px; color: var(--faint); }
-.sgroup-state.done { color: var(--ok); }
-.sgroup-body { padding: 12px 0 6px; }
-.sgroup-body .oauth-row { margin-top: 2px; }
-
-.field {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 10px 18px;
-  align-items: center;
-  padding: 6px 0;
-}
-.field label { font-size: 16px; color: var(--text); }
-.field .ctl { min-width: 0; }
-.field input, .field textarea, .field select {
-  width: 100%;
-  font: inherit;
-  font-size: 15.5px;
-  color: var(--text);
-  background: var(--surface-2);
-  border: none;
-  border-radius: 9px;
-  padding: 8px 11px;
-  outline: none;
-}
-.field input:focus, .field textarea:focus, .field select:focus { box-shadow: 0 0 0 2px var(--accent); }
-.field textarea { resize: vertical; min-height: 62px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-.field .hint { display: block; margin-top: 4px; }
-.field .filled { color: var(--ok); }
-.tick { color: var(--ok); margin-left: 5px; font-size: 14px; }
-
-.form-foot { display: flex; align-items: center; gap: 14px; }
-
-.oauth-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-.oauth-row .hint { max-width: 460px; }
 
 /* ---------- footer & toast ---------- */
 

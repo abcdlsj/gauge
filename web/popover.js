@@ -251,17 +251,30 @@ async function load() {
 
 /* ---------- settings view ---------- */
 
-async function openSettings() {
-  try {
-    const data = await api('/api/settings');
-    renderSettings(data.fields || []);
-    $('#list-scroll').hidden = true;
-    $('#view-settings').hidden = false;
-    document.body.classList.add('settings-open');
+// The settings pages are drawn by web/settings-ui.js; this file only swaps
+// the list for them and keeps the window fitted.
+const settingsUI = GaugeSettings.create({
+  root: $('#settings-root'),
+  layout: 'stack',
+  toast,
+  onNavigate(title) {
+    $('#settings-title').textContent = title || 'Settings';
+    $('#settings-root').scrollTop = 0;
     fitWindow();
-  } catch (err) {
-    toast(`Settings failed: ${err.message}`);
-  }
+  },
+  onTheme(theme) {
+    currentTheme = theme;
+    paintThemeButton(theme);
+  },
+  onSaved() { load(); },
+});
+
+async function openSettings() {
+  $('#list-scroll').hidden = true;
+  $('#view-settings').hidden = false;
+  document.body.classList.add('settings-open');
+  await settingsUI.open();
+  fitWindow();
 }
 
 function closeSettings() {
@@ -271,73 +284,10 @@ function closeSettings() {
   fitWindow();
 }
 
-function renderSettings(fields) {
-  const groups = new Map();
-  for (const f of fields) {
-    if (!groups.has(f.group)) groups.set(f.group, []);
-    groups.get(f.group).push(f);
-  }
-
-  $('#settings-fields').innerHTML = [...groups.entries()].map(([group, items]) => `
-    <section class="set-group">
-      <h3>${esc(group)}</h3>
-      <div class="set-card">${items.map(renderField).join('')}</div>
-    </section>`).join('');
-}
-
-function renderField(f) {
-  const mark = f.configured ? '<span class="tick">✓</span>' : '';
-  const placeholder = f.placeholder || f.default || '';
-  let control;
-  if (f.kind === 'select') {
-    const options = f.options || [];
-    const current = f.configured ? f.value : options[0] || '';
-    control = `<select name="${esc(f.key)}">${options.map((o) =>
-      `<option value="${esc(o)}"${o === current ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-  } else if (f.kind === 'textarea') {
-    control = `<textarea name="${esc(f.key)}" rows="2" placeholder="${esc(placeholder)}"></textarea>`;
-  } else {
-    const type = f.sensitive ? 'password' : f.kind === 'number' ? 'number' : 'text';
-    const value = !f.sensitive && f.configured ? ` value="${esc(f.value)}"` : '';
-    control = `<input type="${type}" name="${esc(f.key)}" placeholder="${esc(placeholder)}"${value} autocomplete="off" spellcheck="false" />`;
-  }
-  return `
-    <div class="set-row">
-      <label>${esc(f.label)}${mark}</label>
-      <div class="ctl">${control}</div>
-    </div>`;
-}
-
-async function saveSettings() {
-  const form = $('#settings-form');
-  const payload = {};
-  for (const el of form.querySelectorAll('input, textarea, select')) {
-    const value = el.value.trim();
-    if (value) payload[el.name] = value;
-  }
-  if (!Object.keys(payload).length) {
-    toast('Nothing to save');
-    return;
-  }
-  const btn = $('#save-settings');
-  btn.disabled = true;
-  try {
-    const res = await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
-    form.reset();
-    toast(`Saved ${res.saved} value(s)`);
-    closeSettings();
-    await load();
-  } catch (err) {
-    toast(`Save failed: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 $('#open-settings').addEventListener('click', openSettings);
-$('#close-settings').addEventListener('click', closeSettings);
-$('#save-settings').addEventListener('click', saveSettings);
-$('#settings-form').addEventListener('submit', (e) => e.preventDefault());
+$('#close-settings').addEventListener('click', () => {
+  if (!settingsUI.back()) closeSettings();
+});
 
 $('#refresh-all').addEventListener('click', async (e) => {
   const btn = e.currentTarget;
@@ -380,7 +330,7 @@ let fitTimer = null;
 // height back and the window could never settle.
 function naturalHeight(panel) {
   const body = document.body;
-  const scrollers = [document.querySelector('#pop-body'), document.querySelector('.set-body')].filter(Boolean);
+  const scrollers = [document.querySelector('#pop-body'), document.querySelector('#settings-root')].filter(Boolean);
   const offsets = scrollers.map((el) => el.scrollTop);
   const prevBodyHeight = body.style.getPropertyValue('height');
   const prevMax = panel.style.maxHeight;
@@ -414,7 +364,10 @@ function fitWindow() {
 
 load();
 paintThemeButton(currentTheme);
-if (new URLSearchParams(location.search).get('settings') === '1') openSettings();
+// ?settings=1 opens the settings index, ?settings=<section> one section
+// (screenshots and links use it).
+const settingsParam = new URLSearchParams(location.search).get('settings');
+if (settingsParam) openSettings().then(() => { if (settingsParam !== '1') settingsUI.open(settingsParam); });
 setInterval(load, 20000);
 setInterval(refreshTickers, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });

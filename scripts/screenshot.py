@@ -44,11 +44,18 @@ def fixture_overview() -> dict:
         "generated_at": t,
         "started_at": now(-timedelta(hours=6)),
         "providers": [
-            {"name": "gemini-cli", "title": "Gemini CLI", "interval_seconds": 300},
-            {"name": "claude", "title": "Claude", "interval_seconds": 300},
-            {"name": "colab", "title": "Colab", "interval_seconds": 900},
-            {"name": "google-flow", "title": "Google Flow", "interval_seconds": 900},
-            {"name": "gcp-billing", "title": "GCP Billing", "interval_seconds": 3600},
+            {"name": "antigravity", "title": "Antigravity", "interval_seconds": 300},
+            {"name": "colab", "title": "Colab", "interval_seconds": 1800},
+            {"name": "google-flow", "title": "Google Flow", "interval_seconds": 1800},
+            {"name": "gcp-billing", "title": "GCP billing", "interval_seconds": 21600},
+            {"name": "gcp-monitoring", "title": "GCP monitoring", "interval_seconds": 600},
+        ],
+        "runs": [
+            {"provider": "antigravity", "status": "ok", "last_run": now(-timedelta(minutes=2)), "duration_ms": 420},
+            {"provider": "colab", "status": "ok", "last_run": now(-timedelta(minutes=12)), "duration_ms": 610},
+            {"provider": "google-flow", "status": "expired_auth", "last_run": now(-timedelta(minutes=20)), "error": "credential rejected: HTTP 401: session expired", "duration_ms": 300},
+            {"provider": "gcp-billing", "status": "unconfigured", "last_run": now(-timedelta(hours=1)), "error": "not configured: gcp_billing_table is empty", "duration_ms": 2},
+            {"provider": "gcp-monitoring", "status": "ok", "last_run": now(-timedelta(minutes=4)), "duration_ms": 880},
         ],
         "accounts": [
             {
@@ -95,40 +102,53 @@ def fixture_overview() -> dict:
 
 
 def fixture_settings() -> dict:
-    """Enough rows that the form has to scroll inside the 780pt cap."""
-    def text(key, label, group, value=None, placeholder=None):
-        field = {"key": key, "label": label, "group": group, "kind": "text", "configured": value is not None}
-        if value is not None:
-            field["value"] = value
-        if placeholder is not None:
-            field["placeholder"] = placeholder
-        return field
+    """The /api/settings shape: one section per source, plus General."""
+    def field(key, label, kind, value=None, **extra):
+        out = {"key": key, "label": label, "kind": kind, "configured": value is not None,
+               "value": value if value is not None else extra.get("default", ""),
+               "sensitive": kind == "secret"}
+        out.update(extra)
+        return out
 
-    def secret(key, label, group, configured):
-        return {"key": key, "label": label, "group": group, "kind": "password", "sensitive": True, "configured": configured}
-
-    def select(key, label, group, options, value):
-        return {"key": key, "label": label, "group": group, "kind": "select", "options": options, "configured": True, "value": value, "sensitive": False}
+    def interval(provider, label, default, floor, value=None):
+        return field(f"refresh_{provider}_minutes", label, "number", value, unit="min",
+                     default=str(default), min=floor, help=f"Minimum {floor} minutes.")
 
     return {
-        "fields": [
-            secret("gemini_cookie", "Cookie", "Gemini CLI", True),
-            text("gemini_project", "Project", "Gemini CLI", value="gauge-prod"),
-            text("gemini_model", "Model", "Gemini CLI", value="gemini-2.5-pro"),
-            select("gemini_interval", "Cadence", "Gemini CLI", ["5m", "15m", "1h"], "5m"),
-            secret("claude_cookie", "Cookie", "Claude", False),
-            text("claude_org", "Organisation", "Claude", placeholder="org-…"),
-            secret("antigravity_cookie", "Session", "Antigravity", True),
-            text("antigravity_dir", "Gemini dir", "Antigravity", value="~/.gemini"),
-            secret("flow_cookie", "Cookie", "Google Flow", True),
-            text("flow_project", "Project", "Google Flow", value="flow-lab"),
-            text("flow_quota", "Quota key", "Google Flow", placeholder="flow.credits"),
-            select("colab_region", "Region", "Colab", ["us-central1", "europe-west4"], "us-central1"),
-            text("colab_project", "Project", "Colab", value="colab-runtime"),
-            secret("gcp_json", "Service account", "GCP Billing", False),
-            text("gcp_project", "Billing project", "GCP Billing", value="gauge-prod"),
-            text("gcp_dataset", "BigQuery dataset", "GCP Billing", placeholder="billing_export"),
-            text("webhook_url", "Webhook", "Notifications", placeholder="https://…"),
+        "sections": [
+            {"id": "antigravity", "title": "Antigravity", "providers": ["antigravity"],
+             "summary": "Gemini and Claude model quota. Read from the running IDE first; the token is only needed when it is closed.",
+             "fields": [
+                 field("antigravity_refresh_token", "Refresh token", "secret", "••••x9Qa", optional=True, help="Minted by Sign in with Google."),
+                 interval("antigravity", "Refresh every", 5, 5),
+             ]},
+            {"id": "colab", "title": "Colab", "providers": ["colab"], "summary": "Compute-unit balance.",
+             "fields": [
+                 field("colab_cookie", "Pasted cookie", "secret", multiline=True, optional=True, placeholder="SID=…; HSID=…", help="Only used when Chrome cookies are off."),
+                 interval("colab", "Refresh every", 30, 30, "45"),
+             ]},
+            {"id": "google-flow", "title": "Google Flow", "providers": ["google-flow"], "summary": "Video credit balance.",
+             "fields": [
+                 field("flow_cookie", "Pasted cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
+                 interval("google-flow", "Refresh every", 30, 30),
+             ]},
+            {"id": "gcp", "title": "Google Cloud", "providers": ["gcp-billing", "gcp-monitoring"],
+             "summary": "Billing-export credits and Gemini API call counts.",
+             "fields": [
+                 field("gcp_project_id", "Project ID", "text", "gauge-prod", placeholder="my-project"),
+                 field("gcp_billing_table", "Billing export table", "text", placeholder="project.dataset.gcp_billing_export_v1_…", help="Standard usage cost export in BigQuery."),
+                 field("gcp_initial_credits", "Initial credits", "number", "447.27", help="Starting balance used to derive the remaining amount."),
+                 field("gcp_currency", "Currency", "text", default="HKD", placeholder="HKD"),
+                 field("google_refresh_token", "Refresh token", "secret", optional=True, help="Fallback when no ADC is found."),
+                 field("gcp_sa_json", "Service account JSON", "secret", multiline=True, optional=True, help="Takes precedence over the refresh token."),
+                 interval("gcp-billing", "Billing refresh", 360, 60),
+                 interval("gcp-monitoring", "Monitoring refresh", 10, 10),
+             ]},
+            {"id": "general", "title": "General", "providers": [],
+             "fields": [
+                 field("browser_cookies", "Read Google cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Used by Colab and Flow. One keychain prompt."),
+                 field("webhook_url", "Alert webhook", "secret", optional=True, help="Receives JSON when a source changes state."),
+             ]},
         ]
     }
 
@@ -336,6 +356,9 @@ def main() -> None:
         shot(f"{base}/popover.html?theme=light", OUT / "popover-light.png", 372, 720)
         shot(f"{base}/popover.html?theme=dark", OUT / "popover-dark.png", 372, 720)
         shot(f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png", 372, 780)
+        shot(f"{base}/popover.html?settings=gcp&theme=light", OUT / "popover-settings-gcp.png", 372, 780)
+        shot(f"{base}/popover.html?settings=general&theme=dark", OUT / "popover-settings-general.png", 372, 600)
+        shot(f"{base}/settings.html?theme=light#gcp", OUT / "web-settings.png", 1100, 900, 1)
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 720)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 760, 536)
         httpd.shutdown()
@@ -344,6 +367,9 @@ def main() -> None:
         "popover-light.png",
         "popover-dark.png",
         "popover-settings.png",
+        "popover-settings-gcp.png",
+        "popover-settings-general.png",
+        "web-settings.png",
         "app-icon.png",
         "tray-icon-readability.png",
     ):

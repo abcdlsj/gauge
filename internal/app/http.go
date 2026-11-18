@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -21,51 +22,92 @@ import (
 type fieldDef struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
-	Group       string   `json:"group"`
-	Kind        string   `json:"kind"` // text, password, number, textarea, url
-	Placeholder string   `json:"placeholder"`
-	Help        string   `json:"help"`
+	Kind        string   `json:"kind"` // text, number, secret, switch, select
+	Placeholder string   `json:"placeholder,omitempty"`
+	Help        string   `json:"help,omitempty"`
 	Sensitive   bool     `json:"sensitive"`
+	Multiline   bool     `json:"multiline,omitempty"`
 	Optional    bool     `json:"optional,omitempty"`
 	Default     string   `json:"default,omitempty"`
 	Options     []string `json:"options,omitempty"`
+	Unit        string   `json:"unit,omitempty"` // suffix shown after numbers
+	Min         int      `json:"min,omitempty"`
 }
 
-// defaultColabEndpointHint keeps the placeholder short; the collector falls back
-// to the same URL when the field is empty.
-const defaultColabEndpointHint = "https://colab.clients6.google.com/$rpc/.../GetUserInfo"
+// sectionDef groups the fields of one source. Providers ties the section to
+// the collectors it configures, so the UI can show their state and cards.
+type sectionDef struct {
+	ID        string     `json:"id"`
+	Title     string     `json:"title"`
+	Summary   string     `json:"summary,omitempty"`
+	Providers []string   `json:"providers"`
+	Fields    []fieldDef `json:"-"`
+}
 
-// settingFields is the single source of truth for both the settings form and
+func interval(provider, label string, def, floor int) fieldDef {
+	return fieldDef{
+		Key: "refresh_" + provider + "_minutes", Label: label, Kind: "number", Unit: "min",
+		Default: strconv.Itoa(def), Min: floor,
+		Help: fmt.Sprintf("Minimum %d minutes.", floor),
+	}
+}
+
+// settingSections is the single source of truth for both the settings UI and
 // the POST handler's allow-list.
-var settingFields = []fieldDef{
-	{Key: "google_refresh_token", Label: "Shared refresh token", Group: "Google account", Kind: "password", Placeholder: "1//0g...", Help: "Fallback for GCP billing and Monitoring. ADC is discovered automatically.", Sensitive: true, Optional: true},
-	{Key: "gcp_sa_json", Label: "Service account JSON", Group: "Google account", Kind: "textarea", Placeholder: `{"type":"service_account", ...}`, Help: "Takes precedence over the refresh token for BigQuery and Monitoring.", Sensitive: true, Optional: true},
-
-	{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Group: "Antigravity", Kind: "password", Placeholder: "or use Sign in with Google above", Help: "Minted by Sign in with Google. Only needed when the IDE is closed.", Sensitive: true, Optional: true},
-
-	{Key: "gcp_project_id", Label: "GCP project ID", Group: "GCP billing", Kind: "text", Placeholder: "my-project", Help: "Billing export and Monitoring queries run against this project."},
-	{Key: "gcp_billing_table", Label: "Billing export table", Group: "GCP billing", Kind: "text", Placeholder: "project.dataset.gcp_billing_export_v1_XXXXXX", Help: "Standard usage cost export in BigQuery."},
-	{Key: "gcp_initial_credits", Label: "Initial credit amount", Group: "GCP billing", Kind: "number", Placeholder: "447.27", Help: "Starting balance used to derive the remaining amount."},
-	{Key: "gcp_currency", Label: "Currency", Group: "GCP billing", Kind: "text", Placeholder: "HKD", Help: "Display currency for the credit card.", Default: "HKD"},
-
-	{Key: "browser_cookies", Label: "Cookie source", Group: "Colab", Kind: "select", Options: []string{"chrome", "off"}, Help: "chrome reads the local Chrome profile (one keychain prompt); off uses the pasted cookie.", Default: "chrome"},
-	{Key: "colab_cookie", Label: "Pasted cookie", Group: "Colab", Kind: "textarea", Placeholder: "SID=...; HSID=...", Help: "Only needed when the browser cookie source is off.", Sensitive: true, Optional: true},
-
-	{Key: "flow_cookie", Label: "Pasted cookie", Group: "Google Flow", Kind: "textarea", Placeholder: "SID=...; SAPISID=...", Help: "Only needed when the browser cookie source is off.", Sensitive: true, Optional: true},
-
-	{Key: "refresh_antigravity_minutes", Label: "Antigravity interval", Group: "Refresh", Kind: "number", Placeholder: "5", Help: "Minutes between quota polls (minimum 5).", Default: "5"},
-	{Key: "refresh_colab_minutes", Label: "Colab interval", Group: "Refresh", Kind: "number", Placeholder: "30", Help: "Minutes between Colab polls (minimum 30).", Default: "30"},
-	{Key: "refresh_google-flow_minutes", Label: "Google Flow interval", Group: "Refresh", Kind: "number", Placeholder: "30", Help: "Minutes between Flow polls (minimum 30).", Default: "30"},
-	{Key: "refresh_gcp-monitoring_minutes", Label: "Monitoring interval", Group: "Refresh", Kind: "number", Placeholder: "10", Help: "Minutes between Monitoring polls (minimum 10).", Default: "10"},
-	{Key: "refresh_gcp-billing_minutes", Label: "Billing interval", Group: "Refresh", Kind: "number", Placeholder: "360", Help: "Minutes between BigQuery polls (minimum 60).", Default: "360"},
-
-	{Key: "webhook_url", Label: "Alert webhook", Group: "Alerts", Kind: "password", Placeholder: "https://hooks.slack.com/services/...", Help: "Receives a JSON payload when a provider changes state.", Sensitive: true, Optional: true},
+var settingSections = []sectionDef{
+	{
+		ID: "antigravity", Title: "Antigravity", Providers: []string{"antigravity"},
+		Summary: "Gemini and Claude model quota. Read from the running IDE first; the token is only needed when it is closed.",
+		Fields: []fieldDef{
+			{Key: "antigravity_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Minted by Sign in with Google.", Sensitive: true, Optional: true},
+			interval("antigravity", "Refresh every", 5, 5),
+		},
+	},
+	{
+		ID: "colab", Title: "Colab", Providers: []string{"colab"},
+		Summary: "Compute-unit balance.",
+		Fields: []fieldDef{
+			{Key: "colab_cookie", Label: "Pasted cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
+			interval("colab", "Refresh every", 30, 30),
+		},
+	},
+	{
+		ID: "google-flow", Title: "Google Flow", Providers: []string{"google-flow"},
+		Summary: "Video credit balance.",
+		Fields: []fieldDef{
+			{Key: "flow_cookie", Label: "Pasted cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
+			interval("google-flow", "Refresh every", 30, 30),
+		},
+	},
+	{
+		ID: "gcp", Title: "Google Cloud", Providers: []string{"gcp-billing", "gcp-monitoring"},
+		Summary: "Billing-export credits and Gemini API call counts.",
+		Fields: []fieldDef{
+			{Key: "gcp_project_id", Label: "Project ID", Kind: "text", Placeholder: "my-project"},
+			{Key: "gcp_billing_table", Label: "Billing export table", Kind: "text", Placeholder: "project.dataset.gcp_billing_export_v1_…", Help: "Standard usage cost export in BigQuery."},
+			{Key: "gcp_initial_credits", Label: "Initial credits", Kind: "number", Placeholder: "447.27", Help: "Starting balance used to derive the remaining amount."},
+			{Key: "gcp_currency", Label: "Currency", Kind: "text", Placeholder: "HKD", Default: "HKD"},
+			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Fallback when no ADC is found.", Sensitive: true, Optional: true},
+			{Key: "gcp_sa_json", Label: "Service account JSON", Kind: "secret", Multiline: true, Placeholder: `{"type":"service_account", …}`, Help: "Takes precedence over the refresh token.", Sensitive: true, Optional: true},
+			interval("gcp-billing", "Billing refresh", 360, 60),
+			interval("gcp-monitoring", "Monitoring refresh", 10, 10),
+		},
+	},
+	{
+		ID: "general", Title: "General", Providers: []string{},
+		Fields: []fieldDef{
+			{Key: "browser_cookies", Label: "Read Google cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Used by Colab and Flow. One keychain prompt."},
+			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Help: "Receives JSON when a source changes state.", Sensitive: true, Optional: true},
+		},
+	},
 }
 
 var fieldByKey = func() map[string]fieldDef {
-	m := make(map[string]fieldDef, len(settingFields))
-	for _, f := range settingFields {
-		m[f.Key] = f
+	m := map[string]fieldDef{}
+	for _, sec := range settingSections {
+		for _, f := range sec.Fields {
+			m[f.Key] = f
+		}
 	}
 	return m
 }()
@@ -151,62 +193,127 @@ func (a *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ov)
 }
 
-// handleSettings reads or writes the credential table.
+// settingsSection is one section plus the stored state of its fields.
+type settingsSection struct {
+	sectionDef
+	Fields []settingsField `json:"fields"`
+}
+
+// handleSettings reads every section, or writes a batch of values.
 func (a *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch r.Method {
 	case http.MethodGet:
-		fields := make([]settingsField, 0, len(settingFields))
-		for _, f := range settingFields {
-			raw, ok, err := a.store.Get(ctx, f.Key)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+		sections := make([]settingsSection, 0, len(settingSections))
+		for _, sec := range settingSections {
+			out := settingsSection{sectionDef: sec, Fields: make([]settingsField, 0, len(sec.Fields))}
+			for _, f := range sec.Fields {
+				raw, ok, err := a.store.Get(ctx, f.Key)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				configured := ok && raw != ""
+				sf := settingsField{fieldDef: f, Configured: configured}
+				switch {
+				case !configured:
+					sf.Value = f.Default
+				case f.Sensitive:
+					sf.Value = mask(raw)
+				default:
+					sf.Value = raw
+				}
+				out.Fields = append(out.Fields, sf)
 			}
-			configured := ok && raw != ""
-			sf := settingsField{fieldDef: f, Configured: configured}
-			switch {
-			case !configured && f.Default != "":
-				sf.Value = f.Default
-			case f.Sensitive:
-				sf.Value = mask(raw)
-			default:
-				sf.Value = raw
-			}
-			fields = append(fields, sf)
+			sections = append(sections, out)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"fields": fields})
+		writeJSON(w, http.StatusOK, map[string]any{"sections": sections})
 	case http.MethodPost:
 		var payload map[string]string
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10)).Decode(&payload); err != nil {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 			return
 		}
-		saved := 0
+		clean := make(map[string]string, len(payload))
 		for key, value := range payload {
-			if _, allowed := fieldByKey[key]; !allowed {
+			f, allowed := fieldByKey[key]
+			if !allowed {
 				continue
 			}
-			if strings.TrimSpace(value) == "" {
+			value = strings.TrimSpace(value)
+			if value == "" {
 				continue
 			}
-			if err := a.store.Set(ctx, key, strings.TrimSpace(value)); err != nil {
+			if err := validateField(f, value); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "key": key})
+				return
+			}
+			clean[key] = value
+		}
+		for key, value := range clean {
+			if err := a.store.Set(ctx, key, value); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			saved++
 		}
-		// New credentials should be usable right away, not after the cooldown.
-		a.engine.ResetCooldown()
-		// A fresh cookie resumes a paused Colab collector immediately.
-		if _, ok := payload["colab_cookie"]; ok {
-			_ = a.store.Delete(ctx, "colab_auth_state")
-			_ = a.store.Delete(ctx, "colab_cookie_fp")
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"saved": saved})
+		a.afterSettingsChange(ctx, clean)
+		writeJSON(w, http.StatusOK, map[string]any{"saved": len(clean)})
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleDeleteSetting clears one value, so the field falls back to its
+// default (or, for a credential, to automatic discovery).
+func (a *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	if _, allowed := fieldByKey[key]; !allowed {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown setting"})
+		return
+	}
+	if err := a.store.Delete(r.Context(), key); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.afterSettingsChange(r.Context(), map[string]string{key: ""})
+	writeJSON(w, http.StatusOK, map[string]any{"removed": key})
+}
+
+// validateField rejects values the collectors could not use.
+func validateField(f fieldDef, value string) error {
+	switch f.Kind {
+	case "number":
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return fmt.Errorf("%s must be a number", f.Label)
+		}
+		if f.Min > 0 && n < float64(f.Min) {
+			return fmt.Errorf("%s must be at least %d %s", f.Label, f.Min, f.Unit)
+		}
+	case "switch", "select":
+		for _, o := range f.Options {
+			if o == value {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s must be one of %s", f.Label, strings.Join(f.Options, ", "))
+	}
+	return nil
+}
+
+// afterSettingsChange makes new values usable right away.
+func (a *Server) afterSettingsChange(ctx context.Context, changed map[string]string) {
+	// New credentials should be usable right away, not after the cooldown.
+	a.engine.ResetCooldown()
+	// A fresh cookie resumes a paused collector immediately.
+	if _, ok := changed["colab_cookie"]; ok {
+		_ = a.store.Delete(ctx, "colab_auth_state")
+		_ = a.store.Delete(ctx, "colab_cookie_fp")
+	}
+	if _, ok := changed["flow_cookie"]; ok {
+		_ = a.store.Delete(ctx, "flow_auth_state")
+		_ = a.store.Delete(ctx, "flow_cookie_fp")
 	}
 }
 

@@ -77,6 +77,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	})
 	mux.HandleFunc("GET /api/settings", s.handleSettings)
 	mux.HandleFunc("POST /api/settings", s.handleSettings)
+	mux.HandleFunc("DELETE /api/settings/{key}", s.handleDeleteSetting)
 	mux.HandleFunc("POST /api/refresh-all", s.handleRefreshAll)
 	mux.HandleFunc("POST /api/refresh/{provider}", s.handleRefresh)
 	mux.HandleFunc("GET /api/health", s.handleHealth)

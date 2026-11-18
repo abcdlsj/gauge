@@ -41,11 +41,13 @@ make build          # CGO_ENABLED=0, ~11 MB binary
 
 The menubar build keeps its data in `~/Library/Application Support/Gauge`
 and lives in the status bar: click the icon for a 372px popover with the pools,
-the small collectors and a compact settings form. The browser build keeps the
+the small collectors and the settings pages. The browser build keeps the
 full page with top navigation. Both share the components in `app.css`.
 
-Open the panel, expand **Credentials & settings**, paste what you have, then
-press **Refresh all**. Nothing needs a restart.
+Open **Settings**, pick a source and fill in what it needs; every control saves
+on its own (secrets through an inline editor, cleared fields fall back to their
+default). Each source page shows its last run and has **Refresh now**. Nothing
+needs a restart. The popover and the browser page share `web/settings-ui.js`.
 
 ## What it collects
 
