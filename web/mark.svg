@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <g fill="none" stroke-width="4.291" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M22.644 9.584A9.236 9.236 0 0 0 9.584 9.356" stroke="#EA4335"/>
-  <path d="M8.722 10.314A9.236 9.236 0 0 0 8.722 21.686" stroke="#FBBC05"/>
-  <path d="M9.584 22.644A9.236 9.236 0 0 0 22.416 22.644" stroke="#34A853"/>
-  <path d="M23.278 21.686A9.236 9.236 0 0 0 25.236 16.000H17.600" stroke="#4285F4"/>
+  <g>
+    <path d="M6.704 15.732A9.455 9.455 0 0 0 9.315 24.140" fill="none" stroke="#12A866" stroke-width="4.364" stroke-linecap="butt"/>
+    <path d="M14.684 8.092A9.455 9.455 0 0 0 7.539 13.236" fill="none" stroke="#12A866" stroke-width="4.364" stroke-linecap="butt"/>
+    <path d="M24.461 13.236A9.455 9.455 0 0 0 17.316 8.092" fill="none" stroke="#12A866" stroke-width="4.364" stroke-linecap="butt"/>
+    <path d="M22.685 24.140A9.455 9.455 0 0 0 25.296 15.732" fill="none" stroke="#8A8F98" stroke-width="1.455" stroke-linecap="butt"/>
+    <path d="M16.000 17.455L20.138 16.070" fill="none" stroke="#8A8F98" stroke-width="2.909" stroke-linecap="round"/>
+    <circle cx="16.000" cy="17.455" r="2.182" fill="#8A8F98"/>
   </g>
 </svg>
