@@ -32,29 +32,48 @@ func (CommandCode) Title() string           { return "Command Code" }
 func (CommandCode) Interval() time.Duration { return 5 * time.Minute }
 
 func (CommandCode) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
-	key, user, from := commandCodeKey(ctx, d)
-	if key == "" {
-		return nil, fmt.Errorf("%w: sign in with the Command Code CLI or paste an API key", ErrNotConfigured)
+	var out []model.Snapshot
+	var firstErr error
+	for _, slot := range InstanceSlots(ctx, d, "commandcode_api_key") {
+		key, user, from := commandCodeKey(ctx, d, slot)
+		if key == "" {
+			if slot == 1 {
+				firstErr = fmt.Errorf("%w: sign in with the Command Code CLI or paste an API key", ErrNotConfigured)
+			}
+			continue
+		}
+		body, err := getBearerJSON(ctx, d, d.SettingDefault(ctx, "commandcode_endpoint", commandCodeCreditsURL), key)
+		if err != nil {
+			if slot == 1 {
+				firstErr = keySourceHint(err, from, "paste a current API key in settings or sign in again with the Command Code CLI")
+			}
+			continue
+		}
+		snaps, err := parseCommandCode(body)
+		if err != nil {
+			if slot == 1 {
+				firstErr = err
+			}
+			continue
+		}
+		stampInstance(ctx, d, snaps, "commandcode", slot, user)
+		out = append(out, snaps...)
 	}
-	body, err := getBearerJSON(ctx, d, d.SettingDefault(ctx, "commandcode_endpoint", commandCodeCreditsURL), key)
-	if err != nil {
-		return nil, keySourceHint(err, from, "paste a current API key in settings or sign in again with the Command Code CLI")
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
 	}
-	snaps, err := parseCommandCode(body)
-	if err != nil {
-		return nil, err
-	}
-	for i := range snaps {
-		snaps[i].Account = user
-	}
-	return snaps, nil
+	return out, nil
 }
 
 // commandCodeKey prefers a pasted key, then the Command Code CLI's own
-// sign-in. from names where the key came from, for error messages.
-func commandCodeKey(ctx context.Context, d *Deps) (key, user, from string) {
-	if v := d.Setting(ctx, "commandcode_api_key"); v != "" {
+// sign-in. from names where the key came from, for error messages. Extra
+// instances only ever use their own pasted key.
+func commandCodeKey(ctx context.Context, d *Deps, slot int) (key, user, from string) {
+	if v := d.Setting(ctx, InstanceKey("commandcode_api_key", slot)); v != "" {
 		return v, "", "the pasted API key"
+	}
+	if slot > 1 {
+		return "", "", ""
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

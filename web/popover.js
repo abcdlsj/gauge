@@ -219,7 +219,8 @@ function renderGroups(overview) {
   return (overview.layout || []).filter((g) => !g.hidden).map((g) => {
     const cards = g.items.filter((it) => !it.hidden).map((it) => ({ it, sn: find(it) })).filter((c) => c.sn);
     if (!cards.length) return '';
-    const user = !g.slot && cards[0].sn.account
+    const isGoogle = g.id === 'google' || g.id.startsWith('google-');
+    const user = !isGoogle && cards[0].sn.account
       ? `<span class="src-user">${esc(cards[0].sn.account.split('@')[0])}</span>` : '';
     return `
       <section class="src" data-group="${esc(g.id)}"${g.slot ? ` data-slot="${g.slot}"` : ''}>
@@ -228,7 +229,7 @@ function renderGroups(overview) {
           ${staleTag(cards)}
           ${user}
         </div>
-        ${g.slot ? renderAccountLine(g, g.detail) : ''}
+        ${isGoogle ? renderAccountLine(g, g.detail) : ''}
         ${bodyFor(cards)}
       </section>`;
   }).join('');

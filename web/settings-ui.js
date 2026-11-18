@@ -77,6 +77,7 @@
     let current = null; // section id shown in the detail pane
     let editing = null; // secret key whose editor is open
     let adding = false; // the "add a subscription" menu is open
+    let addInstance = null; // source whose inline "name" form is open
     const openSetup = new Set(); // sections whose "Connection & refresh" the user opened
 
     root.classList.add('sx', `sx-${layout}`);
@@ -115,8 +116,39 @@
     }
 
     function section(id) {
-      return sections.find((s) => s.id === id)
-        || (id && id.startsWith('google-') ? sections.find((s) => s.id === 'google') : undefined);
+      const direct = sections.find((s) => s.id === id);
+      if (direct) return direct;
+      const m = /^([a-z][a-z-]*)-(\d+)$/.exec(id || '');
+      return m ? sections.find((s) => s.id === m[1]) : undefined;
+    }
+
+    // instanceOf parses the page id of an extra configuration ("commandcode-2").
+    function instanceOf(id) {
+      const m = /^([a-z][a-z-]*)-(\d+)$/.exec(id || '');
+      if (!m) return null;
+      return sections.some((s) => s.id === m[1]) ? { base: m[1], slot: Number(m[2]) } : null;
+    }
+
+    // fieldSlot reads the instance suffix of a settings key, 0 for shared keys.
+    function fieldSlot(key) {
+      const m = /_(\d)$/.exec(key || '');
+      return m ? Number(m[1]) : 0;
+    }
+
+    const instanceBaseKeys = ['commandcode_api_key', 'opendesign_control_key'];
+
+    // fieldsForPage hides the settings that belong to a different instance.
+    function fieldsForPage(sec) {
+      const inst = instanceOf(current);
+      return sec.fields.filter((f) => {
+        if (f.key === ICON_KEY) return false;
+        const slot = fieldSlot(f.key);
+        if (inst) {
+          if (slot) return slot === inst.slot;
+          return !instanceBaseKeys.includes(f.key);
+        }
+        return !slot;
+      });
     }
 
     function runsFor(sec) {
@@ -189,7 +221,8 @@
         const state = st ? STATE_TEXT[st.status] || st.status : '';
         const sub = [g.detail, state].filter(Boolean).join(' · ');
         const active = g.id === current ? ' aria-current="true"' : '';
-        const avatar = g.slot
+        const isGoogle = g.id === 'google' || g.id.startsWith('google-');
+        const avatar = isGoogle && g.slot
           ? `<span class="sx-avatar"><img src="/api/avatar/${g.slot}" alt="" onerror="this.remove()" /></span>`
           : `<span class="sx-dot ${esc(st ? st.status : 'none')}"></span>`;
         return `
@@ -232,10 +265,18 @@
       for (const id of ['commandcode', 'opendesign', 'gcp']) {
         const sec = sections.find((x) => x.id === id);
         if (!sec) continue;
-        rows.push(`<button class="sx-link sx-add-row" type="button" data-section="${esc(id)}">
+        const instanced = id === 'commandcode' || id === 'opendesign';
+        rows.push(`<button class="sx-link sx-add-row" type="button" ${instanced ? `data-add-instance="${esc(id)}"` : `data-section="${esc(id)}"`}>
           <span class="sx-add-icon">+</span>
-          <span class="sx-link-text"><b>${esc(sec.title)}</b><span>${esc(indexSummary(sec))}</span></span>
+          <span class="sx-link-text"><b>${esc(sec.title)}${instanced ? ' account' : ''}</b><span>${esc(indexSummary(sec))}</span></span>
         </button>`);
+        if (instanced && addInstance === id) {
+          rows.push(`
+            <div class="sx-row sx-add-form">
+              <input class="sx-input" data-instance-name placeholder="Account name" aria-label="Account name" />
+              <button class="sx-btn" type="button" data-instance-create="${esc(id)}">Add</button>
+            </div>`);
+        }
       }
       return `
         <div class="sx-card sx-add">
@@ -271,8 +312,9 @@
       if (sec.id === 'google') parts.push(renderAccountBlock());
       parts.push(renderCards(sec));
 
+      if (instanceOf(current)) parts.push(renderInstanceBlock());
       // Sources split credentials from cadence; General keeps its own order.
-      const fields = sec.fields.filter((f) => f.key !== ICON_KEY);
+      const fields = fieldsForPage(sec);
       const isSource = sec.providers.length > 0;
       const creds = isSource ? fields.filter((f) => !(f.kind === 'number' && f.unit)) : fields;
       const prefs = fields.filter((f) => !creds.includes(f));
@@ -451,6 +493,28 @@
     };
     root.addEventListener('pointerup', endDrag);
     root.addEventListener('pointercancel', endDrag);
+
+    // renderInstanceBlock is the page header of an extra configuration: its
+    // name and the button that removes it from this machine.
+    function renderInstanceBlock() {
+      const inst = instanceOf(current);
+      const g = groupOf(current);
+      const name = (g && g.account_name) || `Account ${inst.slot}`;
+      return `
+        <div class="sx-group">
+          <h3 class="sx-caption">Account</h3>
+          <div class="sx-card">
+            <div class="sx-row">
+              <span class="sx-label"><b>${esc(name)}</b><span class="sx-help">Extra ${esc(secOf(inst.base).title)} configuration</span></span>
+              <button class="sx-btn danger" type="button" data-remove-instance="${inst.slot}">Remove</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function secOf(id) {
+      return sections.find((s) => s.id === id) || { title: id };
+    }
 
     // renderAccountBlock is the identity this page belongs to. Every Google
     // identity is equal: the page only ever edits the one you opened, and
@@ -651,6 +715,7 @@
       if (e.target.closest('[data-handle], .sx-switch')) return;
       if (e.target.closest('[data-add-toggle]')) {
         adding = !adding;
+        addInstance = null;
         render();
         return;
       }
@@ -742,6 +807,49 @@
       }
       if (d.oauth) {
         startOAuth(d.oauth === 'add');
+        return;
+      }
+      if (d.addInstance) {
+        addInstance = addInstance === d.addInstance ? null : d.addInstance;
+        render();
+        const input = root.querySelector('[data-instance-name]');
+        if (input) input.focus();
+        return;
+      }
+      if (d.instanceCreate) {
+        const row = t.closest('.sx-add-form');
+        const name = ((row && row.querySelector('[data-instance-name]')) || {}).value || '';
+        if (!name.trim()) {
+          toast('Give the account a name first');
+          return;
+        }
+        try {
+          const res = await api(`/api/instances/${encodeURIComponent(d.instanceCreate)}`, {
+            method: 'POST',
+            body: JSON.stringify({ name: name.trim() }),
+          });
+          adding = false;
+          addInstance = null;
+          await load();
+          current = `${res.provider}-${res.slot}`;
+          render();
+        } catch (err) {
+          toast(err.message);
+        }
+        return;
+      }
+      if (d.removeInstance) {
+        const inst = instanceOf(current);
+        if (!inst) return;
+        t.disabled = true;
+        try {
+          await api(`/api/instances/${encodeURIComponent(inst.base)}/${inst.slot}`, { method: 'DELETE' });
+          toast('Account removed');
+          current = inst.base;
+        } catch (err) {
+          toast(err.message);
+        }
+        await reloadSection();
         return;
       }
       if (d.removeAccount) {

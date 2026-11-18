@@ -7,14 +7,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/abcdlsj/gauge/internal/engine"
+	"github.com/abcdlsj/gauge/internal/providers"
 	"github.com/abcdlsj/gauge/internal/store"
 )
 
@@ -120,6 +123,59 @@ var fieldByKey = func() map[string]fieldDef {
 	return m
 }()
 
+// instanceFieldDef resolves the settings keys that only exist for extra
+// configurations ("commandcode_api_key_2", "commandcode_account_2").
+func instanceFieldDef(key string) (fieldDef, bool) {
+	for _, spec := range providers.InstanceSpecs() {
+		for slot := 2; slot <= providers.MaxInstances(); slot++ {
+			switch key {
+			case providers.InstanceKey(spec.BaseKey, slot):
+				return fieldDef{Key: key, Label: spec.Label, Kind: "secret", Sensitive: true, Optional: true,
+					Help: "Leave empty to keep this instance unconfigured."}, true
+			case providers.InstanceNameKey(spec.Provider, slot):
+				return fieldDef{Key: key, Label: "Account name", Kind: "text",
+					Help: "Shown in the menu bar to tell this account apart."}, true
+			}
+		}
+	}
+	return fieldDef{}, false
+}
+
+// instanceExists reports whether an extra slot has a name or a credential.
+func (a *Server) instanceExists(ctx context.Context, spec providers.InstanceSpec, slot int) bool {
+	for _, key := range []string{
+		providers.InstanceNameKey(spec.Provider, slot),
+		providers.InstanceKey(spec.BaseKey, slot),
+	} {
+		if v, ok, _ := a.store.Get(ctx, key); ok && v != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// instanceFields appends the fields of the configured extra slots to a
+// section, so the shared settings UI renders them like native fields.
+func (a *Server) instanceFields(ctx context.Context, secID string) []fieldDef {
+	spec, ok := providers.SpecFor(secID)
+	if !ok {
+		return nil
+	}
+	var out []fieldDef
+	for slot := 2; slot <= providers.MaxInstances(); slot++ {
+		if !a.instanceExists(ctx, spec, slot) {
+			continue
+		}
+		if f, ok := instanceFieldDef(providers.InstanceNameKey(spec.Provider, slot)); ok {
+			out = append(out, f)
+		}
+		if f, ok := instanceFieldDef(providers.InstanceKey(spec.BaseKey, slot)); ok {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // settingsField is one field plus its stored state.
 type settingsField struct {
 	fieldDef
@@ -216,8 +272,9 @@ func (a *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		sections := make([]settingsSection, 0, len(settingSections))
 		for _, sec := range settingSections {
-			out := settingsSection{sectionDef: sec, Fields: make([]settingsField, 0, len(sec.Fields))}
-			for _, f := range sec.Fields {
+			fields := append(append([]fieldDef{}, sec.Fields...), a.instanceFields(ctx, sec.ID)...)
+			out := settingsSection{sectionDef: sec, Fields: make([]settingsField, 0, len(fields))}
+			for _, f := range fields {
 				raw, ok, err := a.store.Get(ctx, f.Key)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -247,6 +304,9 @@ func (a *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		clean := make(map[string]string, len(payload))
 		for key, value := range payload {
 			f, allowed := fieldByKey[key]
+			if !allowed {
+				f, allowed = instanceFieldDef(key)
+			}
 			if !allowed {
 				continue
 			}
@@ -279,8 +339,10 @@ func (a *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 func (a *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	if _, allowed := fieldByKey[key]; !allowed {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown setting"})
-		return
+		if _, ok := instanceFieldDef(key); !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown setting"})
+			return
+		}
 	}
 	if err := a.store.Delete(r.Context(), key); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -288,6 +350,80 @@ func (a *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	a.afterSettingsChange(r.Context(), map[string]string{key: ""})
 	writeJSON(w, http.StatusOK, map[string]any{"removed": key})
+}
+
+// handleInstance creates an extra configuration for a source. The user names
+// it here; its credential is filled in on the instance page afterwards.
+func (a *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	provider := r.PathValue("provider")
+	spec, ok := providers.SpecFor(provider)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this source does not support extra instances"})
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an account name is required"})
+		return
+	}
+	ctx := r.Context()
+	slot := 0
+	for i := 2; i <= providers.MaxInstances(); i++ {
+		if !a.instanceExists(ctx, spec, i) {
+			slot = i
+			break
+		}
+	}
+	if slot == 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "three instances is the limit"})
+		return
+	}
+	if err := a.store.Set(ctx, providers.InstanceNameKey(provider, slot), name); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"provider": provider, "slot": slot, "name": name})
+}
+
+// handleDeleteInstance removes an extra configuration and refreshes the
+// source, which drops its snapshots.
+func (a *Server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
+	provider := r.PathValue("provider")
+	spec, ok := providers.SpecFor(provider)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this source does not support extra instances"})
+		return
+	}
+	slot, err := strconv.Atoi(r.PathValue("slot"))
+	if err != nil || slot < 2 || slot > providers.MaxInstances() {
+		http.Error(w, "invalid slot", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	for _, key := range []string{
+		providers.InstanceNameKey(spec.Provider, slot),
+		providers.InstanceKey(spec.BaseKey, slot),
+	} {
+		if err := a.store.Delete(ctx, key); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	a.engine.ResetCooldown(provider)
+	go a.engine.RunOnce(context.Background(), provider, true)
+	writeJSON(w, http.StatusOK, map[string]any{"removed": slot})
 }
 
 // handleDisplay stores the order and visibility of the subscription groups
@@ -424,6 +560,29 @@ func (a *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write(raw)
 				return
 			}
+		}
+		// Fetch Google's copy here instead of redirecting: the webview's
+		// content policy and App Transport Security both dislike a cross-origin
+		// image hop, so the avatar silently failed and fell back to initials.
+		if u, err := url.Parse(account.Picture); err == nil && u.Scheme == "https" && strings.HasSuffix(u.Hostname(), ".googleusercontent.com") {
+			client := &http.Client{Timeout: 5 * time.Second}
+			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+			if err != nil {
+				break
+			}
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gauge")
+			resp, err := client.Do(req)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				if resp != nil {
+					resp.Body.Close()
+				}
+				break
+			}
+			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			_, _ = io.Copy(w, io.LimitReader(resp.Body, 512<<10))
+			resp.Body.Close()
+			return
 		}
 		http.Redirect(w, r, account.Picture, http.StatusFound)
 		return

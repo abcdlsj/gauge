@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/abcdlsj/gauge/internal/model"
+	"github.com/abcdlsj/gauge/internal/providers"
 )
 
 // The dashboard is organised by subscription, not by collector: a Google AI
@@ -60,6 +61,7 @@ type LayoutItem struct {
 	Provider string `json:"provider"`
 	Metric   string `json:"metric"`
 	Hidden   bool   `json:"hidden"`
+	Account  string `json:"account,omitempty"` // identity that produced the card
 }
 
 // LayoutGroup is one subscription (level one). Each signed-in Google
@@ -160,7 +162,13 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 	// The groups this build knows, plus one per unknown collector so a new
 	// provider is never invisible.
 	defs := googleGroupDefs(accounts)
-	defs = append(defs, groupDefs[1:]...)
+	defs = append(defs, e.instanceGroupDefs(ctx, "commandcode", "Command Code", "commandcode_api_key", quotas)...)
+	defs = append(defs, e.instanceGroupDefs(ctx, "opendesign", "Open Design", "opendesign_control_key", quotas)...)
+	for _, d := range groupDefs {
+		if d.ID == "gcp" {
+			defs = append(defs, d)
+		}
+	}
 	owner := map[string]string{}
 	for _, d := range defs {
 		for _, p := range d.Providers {
@@ -200,7 +208,7 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 				if label == "" {
 					label = q.Label
 				}
-				list = append(list, LayoutItem{ID: id, Label: label, Provider: q.Provider, Metric: q.Metric, Hidden: !haveStored && defaults[id]})
+				list = append(list, LayoutItem{ID: id, Label: label, Provider: q.Provider, Metric: q.Metric, Account: q.Account, Hidden: !haveStored && defaults[id]})
 			}
 		}
 		cards[d.ID] = list
@@ -246,17 +254,41 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 		sg, has := storedGroup[id]
 		g.Hidden = has && sg.Hidden
 
+		g.Items = orderedItems(cards[id], sg.Items, defaults)
 		if d.Slot > 0 {
-			if acc, ok := findAccount(accounts, d.Slot); ok {
+			if strings.HasPrefix(d.ID, "google") {
+				if acc, ok := findAccount(accounts, d.Slot); ok {
+					g.Slot = d.Slot
+					g.Email = acc.Email
+					g.AccountName = acc.Name
+					g.Picture = acc.Picture
+					g.Title, g.Detail = googleTitleFor(acc)
+				}
+			} else {
+				// Instanced sources have no avatars: the account name the
+				// collector reported, else the label the user typed when the
+				// instance was added (it may still have no snapshots).
 				g.Slot = d.Slot
-				g.Email = acc.Email
-				g.AccountName = acc.Name
-				g.Picture = acc.Picture
-				g.Title, g.Detail = googleTitleFor(acc)
+				for _, it := range g.Items {
+					if it.Account != "" {
+						g.AccountName = it.Account
+						break
+					}
+				}
+				if g.AccountName == "" && d.Slot > 1 && len(d.Providers) > 0 {
+					if v, ok, _ := e.store.Get(ctx, providers.InstanceNameKey(d.Providers[0], d.Slot)); ok {
+						g.AccountName = v
+					}
+				}
+				g.Detail = g.AccountName
+				if d.Slot > 1 {
+					g.Title = d.Title
+					if g.AccountName != "" {
+						g.Title = d.Title + " · " + g.AccountName
+					}
+				}
 			}
 		}
-
-		g.Items = orderedItems(cards[id], sg.Items, defaults)
 		out = append(out, g)
 	}
 	return out
@@ -286,6 +318,41 @@ func orderedItems(cards []LayoutItem, stored []StoredItem, defaults map[string]b
 		}
 		it.Hidden = defaults[it.ID]
 		out = append(out, it)
+	}
+	return out
+}
+
+// instanceGroupDefs splits a source into one group per configured instance.
+// Slot 1 is always listed so an unconfigured source stays reachable from the
+// settings page. Extra slots exist once they have a name or credential, or a
+// snapshot that carries their @N suffix.
+func (e *Engine) instanceGroupDefs(ctx context.Context, provider, title, baseKey string, quotas []model.Snapshot) []groupDef {
+	slots := map[int]bool{1: true}
+	for _, q := range quotas {
+		if q.Provider == provider {
+			slots[accountSlot(q.Metric)] = true
+		}
+	}
+	for slot := 2; slot <= 3; slot++ {
+		for _, key := range []string{
+			providers.InstanceKey(baseKey, slot),
+			providers.InstanceNameKey(provider, slot),
+		} {
+			if v, ok, _ := e.store.Get(ctx, key); ok && v != "" {
+				slots[slot] = true
+			}
+		}
+	}
+	var out []groupDef
+	for slot := 1; slot <= 3; slot++ {
+		if !slots[slot] {
+			continue
+		}
+		id := provider
+		if slot > 1 {
+			id = fmt.Sprintf("%s-%d", provider, slot)
+		}
+		out = append(out, groupDef{ID: id, Title: title, Providers: []string{provider}, Slot: slot})
 	}
 	return out
 }

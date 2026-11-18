@@ -47,6 +47,8 @@
 .sx-add-row { color: var(--text); }
 .sx-add-row + .sx-add-row { border-top: 1px solid var(--line); }
 .sx-add-row .sx-link-text span { color: var(--faint); font-size: var(--sx-fs-sm); }
+.sx-add-form { gap: 8px; }
+.sx-add-form .sx-input { flex: 1; }
 .sx-add-icon {
   flex: none;
   width: 18px;

@@ -29,48 +29,73 @@ func (OpenDesign) Title() string           { return "Open Design" }
 func (OpenDesign) Interval() time.Duration { return 5 * time.Minute }
 
 func (OpenDesign) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
-	key, user, from := openDesignKey(ctx, d)
+	var out []model.Snapshot
+	var firstErr error
+	for _, slot := range InstanceSlots(ctx, d, "opendesign_control_key") {
+		snaps, user, err := collectOpenDesign(ctx, d, slot)
+		if err != nil {
+			if slot == 1 {
+				firstErr = err
+			}
+			continue
+		}
+		stampInstance(ctx, d, snaps, "opendesign", slot, user)
+		out = append(out, snaps...)
+	}
+	if len(out) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return out, nil
+}
+
+// collectOpenDesign reads one instance: its workspace, then the billing
+// preflight. The user is the email the CLI stored, empty for a pasted key.
+func collectOpenDesign(ctx context.Context, d *Deps, slot int) ([]model.Snapshot, string, error) {
+	key, user, from := openDesignKey(ctx, d, slot)
 	if key == "" {
-		return nil, fmt.Errorf("%w: sign in with the Open Design CLI or paste a control key", ErrNotConfigured)
+		if slot > 1 {
+			return nil, "", nil
+		}
+		return nil, "", fmt.Errorf("%w: sign in with the Open Design CLI or paste a control key", ErrNotConfigured)
 	}
 	api := d.SettingDefault(ctx, "opendesign_api_url", openDesignAPI)
 
 	const fix = "paste a current control key in settings or sign in again with the Open Design CLI"
 	body, err := getBearerJSON(ctx, d, api+"/api/v1/workspaces/current", key)
 	if err != nil {
-		return nil, keySourceHint(err, from, fix)
+		return nil, "", keySourceHint(err, from, fix)
 	}
 	var ws struct {
 		Active string `json:"activeWorkspaceId"`
 		ID     string `json:"workspaceId"`
 	}
 	if err := json.Unmarshal(body, &ws); err != nil {
-		return nil, fmt.Errorf("opendesign: decode workspace: %w", err)
+		return nil, "", fmt.Errorf("opendesign: decode workspace: %w", err)
 	}
 	id := cmp.Or(ws.Active, ws.ID)
 	if id == "" {
-		return nil, fmt.Errorf("opendesign: the account has no active workspace")
+		return nil, "", fmt.Errorf("opendesign: the account has no active workspace")
 	}
 
 	body, err = getBearerJSON(ctx, d, api+"/api/v1/workspaces/"+url.PathEscape(id)+"/billing/preflight", key)
 	if err != nil {
-		return nil, keySourceHint(err, from, fix)
+		return nil, "", keySourceHint(err, from, fix)
 	}
 	snaps, err := parseOpenDesign(body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	for i := range snaps {
-		snaps[i].Account = user
-	}
-	return snaps, nil
+	return snaps, user, nil
 }
 
 // openDesignKey prefers a pasted control key, then the Open Design CLI's
 // sign-in in ~/.amr/config.json (profile "prod").
-func openDesignKey(ctx context.Context, d *Deps) (key, user, from string) {
-	if v := d.Setting(ctx, "opendesign_control_key"); v != "" {
+func openDesignKey(ctx context.Context, d *Deps, slot int) (key, user, from string) {
+	if v := d.Setting(ctx, InstanceKey("opendesign_control_key", slot)); v != "" {
 		return v, "", "the pasted control key"
+	}
+	if slot > 1 {
+		return "", "", ""
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
