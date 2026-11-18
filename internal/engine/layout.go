@@ -17,9 +17,6 @@ import (
 // LayoutKey stores the user's order and visibility as JSON (StoredLayout).
 const LayoutKey = "display_layout"
 
-// legacyHiddenKey is the flat card list used before groups existed.
-const legacyHiddenKey = "display_hidden_cards"
-
 // groupDef is a built-in group: which collectors feed it, in default order.
 type groupDef struct {
 	ID        string
@@ -124,18 +121,10 @@ func (e *Engine) storedLayout(ctx context.Context) (StoredLayout, bool) {
 	return l, true
 }
 
-// defaultHiddenSet is used until a layout is stored: the legacy flat list if
-// one exists, else the built-in default.
-func (e *Engine) defaultHiddenSet(ctx context.Context) map[string]bool {
-	list := defaultHidden
-	if raw, ok, err := e.store.Get(ctx, legacyHiddenKey); err == nil && ok {
-		var legacy []string
-		if json.Unmarshal([]byte(raw), &legacy) == nil {
-			list = legacy
-		}
-	}
+// defaultHiddenSet is used until a layout is stored.
+func (e *Engine) defaultHiddenSet() map[string]bool {
 	out := map[string]bool{}
-	for _, id := range list {
+	for _, id := range defaultHidden {
 		out[id] = true
 	}
 	return out
@@ -146,7 +135,7 @@ func (e *Engine) defaultHiddenSet(ctx context.Context) map[string]bool {
 // cards simply has no items. New cards join the end of their group.
 func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts []model.Account) []LayoutGroup {
 	stored, haveStored := e.storedLayout(ctx)
-	defaults := e.defaultHiddenSet(ctx)
+	defaults := e.defaultHiddenSet()
 
 	// The groups this build knows, plus one per unknown collector so a new
 	// provider is never invisible.

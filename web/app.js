@@ -125,8 +125,8 @@ async function load() {
 
 /* ---------- views ---------- */
 
-// Routes: #/overview (the default; #/usage is the old name), #/source/<group>
-// for one subscription, #/activity.
+// Routes: #/overview (the default), #/source/<group> for one subscription,
+// #/activity.
 function route() {
   const path = location.hash.replace(/^#\/?/, '');
   if (path === 'activity') return { view: 'activity' };
