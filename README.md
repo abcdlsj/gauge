@@ -5,6 +5,13 @@ tray icon and see, without opening anything else: Antigravity plan and model
 pools (5 h / weekly), Gemini CLI calls today, BigQuery credit burn, Colab compute
 units, Flow video credits.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/popover-dark.png">
+    <img src="docs/popover-light.png" width="372" alt="Gauge popover: account, Gemini and Claude pools, Colab units, Flow credits, cost">
+  </picture>
+</p>
+
 Collectors poll upstream on a quiet schedule and write snapshots to an embedded
 SQLite file; the UI only reads local data, so the popover opens instantly and
 never triggers extra billing or rate limits. A headless HTTP build serves the
