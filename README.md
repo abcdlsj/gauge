@@ -151,14 +151,40 @@ per subscription with all of its cards.
 ## Build from source
 
 ```sh
-make app      # build/bin/Gauge.app — needs macOS + Xcode command line tools
+make app           # build/bin/Gauge.app — universal, needs macOS + Xcode CLT
+make dist          # build/dist/Gauge-<version>-macos-universal.zip
+make server-dist   # headless binaries for linux/windows, amd64 + arm64
 make run-app
-make test     # go test ./...
-make build    # headless binary only, CGO-free
+make test          # go test ./...
+make build         # headless binary only, CGO-free
 ```
 
 `make app` needs the icon, which `scripts/make_icons.py` draws — one geometry in
 SVG that also produces the committed menu-bar template and `web/mark.svg`.
+
+## Releasing
+
+The tag is the version: `make dist` reads it from `git describe`, so the bundle
+ships `v0.2.0` → `0.2.0`. `packaging/Info.plist` and `wails.json` carry the same
+number as a fallback and `make version-check` fails if they disagree with the
+tag.
+
+```sh
+# 1. bump packaging/Info.plist + wails.json, commit
+git commit -am "release: 0.2.0"
+# 2. tag the same number and push — CI builds and publishes
+git tag v0.2.0 && git push origin main v0.2.0
+```
+
+`.github/workflows/release.yml` builds the universal app and the headless
+binaries, writes `SHA256SUMS.txt`, and creates the GitHub release with generated
+notes. `.github/workflows/ci.yml` runs gofmt/vet/tests on Linux and macOS plus
+both build jobs on every push.
+
+Only the macOS app is a first-class target. The menu-bar popover, the template
+icons and the Chrome cookie decryption (macOS keychain) are macOS-specific;
+elsewhere `internal/browsercookie` reports `unavailable`, so the Colab and Flow
+collectors stay `unconfigured` and the headless server serves everything else.
 
 ```
 cmd/gauge          Wails menu-bar shell

@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./...
+
+  # The desktop app is macOS-only (menu bar popover, template icons, Chrome
+  # cookie decryption through the macOS keychain). The headless server is pure
+  # Go and has to keep building everywhere.
+  app:
+    name: macos app bundle
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: svg rasteriser for scripts/make_icons.py
+        run: brew install librsvg
+      - run: make dist
+      - name: check the bundle
+        run: |
+          lipo -archs build/bin/Gauge.app/Contents/MacOS/Gauge | grep -q arm64
+          lipo -archs build/bin/Gauge.app/Contents/MacOS/Gauge | grep -q x86_64
+          codesign --verify --deep --strict build/bin/Gauge.app
+          unzip -l build/dist/Gauge-*-macos-universal.zip | grep -q "Gauge.app/Contents/MacOS/Gauge"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: build/dist/Gauge-*-macos-universal.zip
+          if-no-files-found: error
+
+  server:
+    name: headless builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make server-dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: headless
+          path: build/dist/gauge-*
+          if-no-files-found: error
