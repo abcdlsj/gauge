@@ -1,229 +1,176 @@
 # Gauge
 
-A desktop-first, read-only dashboard for Gemini / Google Cloud quota and spend.
-Ships as a macOS app (`make app`) and as a plain HTTP binary for headless use.
-Four collectors poll upstream APIs in the background and write snapshots to
-embedded SQLite; the page only reads local data, so it opens instantly and never
-triggers extra billing or rate limits.
+A macOS menu-bar dashboard for Gemini / Google Cloud quota and spend. Click the
+tray icon and see, without opening anything else: Antigravity plan and model
+pools (5 h / weekly), Gemini CLI calls today, BigQuery credit burn, Colab compute
+units, Flow video credits.
 
-```
-cmd/gauge-server/main.go          headless entrypoint (HTTP)
-cmd/gauge/main.go    Wails desktop shell
-internal/app                shared wiring: store, engine, routes, middleware
-internal/store              SQLite snapshots, run state, events, AES-GCM settings
-internal/engine             per-provider scheduling, cooldown, alert webhook
-internal/providers          antigravity · gcp-billing · gcp-monitoring · colab
-internal/browsercookie      read (and decrypt) cookies from the local Chrome profile
-web                         index.html · app.css · app.js (no framework)
-```
+Collectors poll upstream on a quiet schedule and write snapshots to an embedded
+SQLite file; the UI only reads local data, so the popover opens instantly and
+never triggers extra billing or rate limits. A headless HTTP build serves the
+same UI for a server or a container.
 
-## Quick start
+## Install
 
-Desktop app (primary):
+Download `Gauge-x.y.z-macos-universal.zip` from
+[Releases](https://github.com/abcdlsj/gauge/releases), move `Gauge.app` to
+`/Applications`. The bundle is ad-hoc signed, not notarised: on first launch use
+right-click → Open, or
 
 ```sh
-make app            # build/bin/Gauge.app (menubar app, no Dock icon)
-make run-app
+xattr -dr com.apple.quarantine /Applications/Gauge.app
 ```
 
-The mark is drawn by `scripts/make_icons.py` — one geometry in SVG that becomes
-`AppIcon.icns`, the committed 22pt menu-bar template and `web/mark.svg`; run
-`make icons` after changing it.
-`scripts/screenshot.py` renders the popover in light and dark plus the menu-bar
-glyph on both wallpapers into `build/screenshots/`.
+Requires macOS 13+. Builds for Apple Silicon and Intel (universal).
 
-Headless server:
+## Where the data lives
 
-```sh
-make build          # CGO_ENABLED=0, ~11 MB binary
-./bin/gauge        # http://127.0.0.1:8090
-```
+| What | Path |
+| --- | --- |
+| Database | `~/Library/Application Support/Gauge/quota.db` (+ `-wal`, `-shm`) |
+| Encryption key | `~/Library/Application Support/Gauge/gauge.key` (0600, AES-GCM) |
+| Headless build | `-db` / `GAUGE_DB`, key defaults to `gauge.key` next to it |
 
-The menubar build keeps its data in `~/Library/Application Support/Gauge`
-and lives in the status bar: click the icon for a 372px popover with the pools,
-the small collectors and the settings pages. The browser build keeps the
-full page with top navigation. Both share the components in `app.css`.
+Everything Gauge produces stays in that folder: quota snapshots, run state, an
+activity log, and settings — anything token-, cookie- or secret-shaped is
+encrypted before it is written. There is no server, no telemetry, no analytics.
 
-Open **Settings**, pick a source and fill in what it needs; every control saves
-on its own (secrets through an inline editor, cleared fields fall back to their
-default). Each source page shows its last run and has **Refresh now**. Nothing
-needs a restart. The popover and the browser page share `web/settings-ui.js`.
+Read-only, never modified: `~/.gemini/antigravity/daemon/hub_*.json`,
+`~/.gemini/oauth_creds.json`, `~/.config/gcloud/application_default_credentials.json`,
+and Chrome's `Cookies` / `Local State` (copied to `$TMPDIR` for the read, then
+deleted).
 
 ## What it collects
 
 | Provider | Cadence | Source |
 | --- | --- | --- |
-| `antigravity` | 5 min (configurable) | Cloud Code API — subscription tier, per-model remaining fraction, grouped 5 h / weekly pools |
-| `gcp-billing` | 6 h | BigQuery billing export — incremental credit usage, partitioned by `_PARTITIONTIME` |
-| `gcp-monitoring` | 10 min | Cloud Monitoring `api/request_count` — Gemini CLI calls today (Pacific) and paid API traffic |
-| `colab` | 30 min + 1–5 min jitter | `colab.clients6.google.com` GetUserInfo — compute-unit balance and available accelerator classes |
-| `google-flow` | 30 min | `aisandbox-pa.clients6.google.com` VideoFx GetCredits — video credit balance and reset date |
+| Antigravity | 5 min | the IDE's own local language server; Cloud Code API when the IDE is closed |
+| Cloud Monitoring | 10 min | `api/request_count` — Gemini CLI calls today (Pacific) |
+| GCP billing | 6 h | BigQuery billing export, incremental over `_PARTITIONTIME` |
+| Colab | 30 min | `clients6.google.com` GetUserInfo — compute units, accelerator classes |
+| Google Flow | 30 min | VideoFx GetCredits — video credit balance and reset date |
 
-Billing never rescans the table: the last successful timestamp and the running
-credit total live in `kv_store`, so each cycle reads at most one extra day of
-partitions.
+Antigravity is read from the running IDE first: `hub_<port>.json` gives the pid,
+port and CSRF token of its language server, and Gauge makes the same loopback
+calls the IDE makes. No OAuth, no credentials, no extra session. Only when the
+IDE is closed does it fall back to a loopback OAuth flow, and the refresh token
+is encrypted into the database.
 
-### Antigravity: local first
+Billing keeps a cursor in the database instead of rescanning: each cycle reads at
+most one extra day of partitions.
 
-The IDE ships a language server that already knows the plan, the prompt/flow
-credit balances and the model catalogue. While Antigravity is running, the panel
-reads it directly — no OAuth, no credentials:
+## Compared with the other tools
 
-- discovery: `~/.gemini/antigravity/daemon/hub_<port>.json` (pid, ports, CSRF
-  token), process liveness checked before use
-- RPC: `POST http://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUserStatus`
-  with `X-Codeium-Csrf-Token` and `Connect-Protocol-Version: 1`
-- quota windows: the same server's `RetrieveUserQuotaSummary` returns **both**
-  groups with a weekly and a 5-hour bucket. The public REST variant of that
-  method only returns the third-party group, which is why Gemini was missing
-  its weekly window until this call was added.
+| | **Gauge** | [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) | [antigravity-panel](https://github.com/n2ns/antigravity-panel) | [AntigravityQuotaWatcher](https://github.com/wusimpl/AntigravityQuotaWatcher) |
+| --- | --- | --- | --- | --- |
+| Shape | menu bar app + headless HTTP build | desktop account manager | in-IDE panel | IDE extension |
+| Focus | quota **and money**, all sources in one place | adding / switching / rotating accounts | IDE quota plus usage trends | IDE quota display |
+| Antigravity quota | yes | yes | yes | yes |
+| Spend / billing | BigQuery credits, CLI calls, Colab CU, Flow credits | no | no | no |
+| Changes anything upstream | never | yes — it manages accounts | yes — IDE cache cleanup, auto-accept | no |
+| Multi-account | reads the account(s) you signed in with | yes, that is the point | single | single |
+| Leaves the machine | no | reports/console | no | no |
 
-That is the same path antigravity-panel and AntigravityQuotaWatcher use.
+If what you want is to juggle several Antigravity accounts, use
+Antigravity-Manager. If you want to live inside the IDE, use the panel or the
+extension. Gauge exists because none of them answer "how much does this month
+cost me, and how much of the plan is left" in one glance from the menu bar, and
+because a menu bar hop is cheaper than opening an IDE to look at a number.
 
-When the IDE is closed, the Cloud Code API is used instead. It only accepts
-tokens minted for Antigravity's own OAuth client, so the panel offers a loopback
-OAuth flow (PKCE, `access_type=offline`, scopes `cloud-platform`,
-`userinfo.email`, `userinfo.profile`, `cclog`, `experimentsandconfigs`):
+## Why this shouldn't get an account banned
 
-1. **Settings → Antigravity → Sign in with Google**
-2. finish in the popup; the refresh token is encrypted into `kv_store`
+Read it as: what Gauge does *not* do is most of the risk surface.
 
-Collector behaviour, verified against the OSS clients this was modelled on:
+| Data source | How | Risk |
+| --- | --- | --- |
+| GCP billing / monitoring | OAuth + documented APIs | none |
+| Antigravity, local | loopback RPC to the IDE's own language server | none — same call the IDE makes |
+| Antigravity, IDE closed | OAuth with the client the desktop app ships | low; read-only, no other endpoints |
+| Colab / Flow | your browser cookie + the internal gRPC-Web endpoint the web UI uses | the real one — see below |
 
-- hosts are tried in order: `daily-cloudcode-pa` → `daily-cloudcode-pa.sandbox`
-  → `cloudcode-pa`; auth failures never fall through
-- `loadCodeAssist` with `metadata.ideType=ANTIGRAVITY` yields the paid/current
-  tier, translated to a readable name (`g1-ultra-lite-tier` → `Gemini Ultra 5x`)
-- `fetchAvailableModels` supplies per-model buckets
-- `retrieveUserQuotaSummary` supplies the grouped 5-hour / weekly pools
-- only the two families that matter are kept (`gemini-*`, `claude-*`); models in
-  a family share a pool, so they collapse into one card showing the lowest
+The last row is the only one that leans on Google's "no automated access"
+clause. It is also read-only and deliberately slow:
 
-## Configuration
+- no write path in the code: nothing is generated, reset, transferred, or
+  switched — there is no API that could
+- frequency floors are enforced per collector (5 min Antigravity, 10 min
+  monitoring, 30 min Colab/Flow, 60 min billing) and manual refresh has a 60 s
+  cooldown, so a stuck window cannot hammer an endpoint
+- requests carry your existing session, exactly as a page load would, one
+  account at a time — no rotation, no parallel fan-out
+- a 401/403/429 puts the collector in `expired_auth` and stops polling it until
+  you provide credentials again, instead of retrying
+- turning Chrome cookies off and leaving the pasted cookie empty makes Colab /
+  Flow `unconfigured`: no network call at all
+- the server is loopback-only by default and refuses to bind a public address
+  without `GAUGE_AUTH`
 
-Settings are stored in SQLite; anything that looks like a token, cookie, secret
-or webhook URL is encrypted with AES-GCM before it is written.
+Honest caveats: those internal endpoints have no stability guarantee (a moved
+endpoint and a `403` are both things this codebase already hit), and Google can
+change the rules at any time. If that matters more than the numbers, turn the
+cookie-based collectors off.
 
-| Key | Purpose |
+Gauge is not affiliated with, endorsed by, or supported by Google.
+
+## Settings
+
+**Settings** → per source page with last run and **Refresh now**. Every field
+saves on its own; secrets go through an inline editor and cleared fields fall
+back to their default. Missing credentials are harmless — the collector reports
+`unconfigured` and makes no request.
+
+Credentials resolve in two independent chains, because Antigravity and Cloud APIs
+are often different accounts:
+
+| Chain | Order |
 | --- | --- |
-| `google_refresh_token` | Shared OAuth refresh token fallback |
-| `antigravity_refresh_token` | Dedicated token for the Antigravity collector |
-| `antigravity_creds_path` | Gemini CLI credential file, default `~/.gemini/oauth_creds.json` |
-| `gcp_adc_path` | Application Default Credentials, default `~/.config/gcloud/application_default_credentials.json` |
-| `google_client_id` / `google_client_secret` | Optional OAuth client override (defaults to the Gemini CLI client) |
-| `gcp_sa_json` | Service-account JSON; wins over the refresh token when present |
-| `gcp_project_id` | Project used for BigQuery and Monitoring |
-| `gcp_billing_table` | `project.dataset.gcp_billing_export_v1_XXXXXX` |
-| `gcp_initial_credits` | Starting credit amount, e.g. `447.27` |
-| `gcp_currency` | Display currency, e.g. `HKD` (overridden by BigQuery when it reports one) |
-| `gemini_cli_daily_limit` | Daily CLI ceiling, default `2000` |
-| `colab_endpoint` | JSON endpoint used by the Colab web UI (copy from the Network tab) |
-| `browser_cookies` | `chrome` (default) reads and decrypts the local Chrome profile; `off` uses the pasted cookie |
-| `colab_cookie` | Fallback cookie when browser reading is off |
-| `colab_idle_threshold_min` | Warn when an accelerator runs longer than this, default `90` |
-| `webhook_url` | Receives a JSON alert when a provider changes state |
-| `antigravity_endpoint` | Optional override of the Cloud Code quota endpoint |
+| Antigravity | `antigravity_refresh_token` → `google_refresh_token` → `~/.gemini/oauth_creds.json` |
+| GCP | `gcp_sa_json` → ADC file → `gcp_refresh_token` → `google_refresh_token` |
 
-### Credential discovery
+Optional: `webhook_url` receives a JSON alert when a provider changes state;
+`browser_cookies` (default `chrome`) reuses the local Chrome profile instead of a
+pasted cookie.
 
-Two independent token chains are kept, because Antigravity and Cloud APIs
-usually belong to different Google accounts.
+## Build from source
 
-| Source | Precedence |
-| --- | --- |
-| Antigravity | `antigravity_refresh_token` → `google_refresh_token` → Gemini CLI credential file |
-| GCP | `gcp_sa_json` → ADC file (service account) → `gcp_refresh_token` → `google_refresh_token` → ADC file (user token) |
+```sh
+make app      # build/bin/Gauge.app — needs macOS + Xcode command line tools
+make run-app
+make test     # go test ./...
+make build    # headless binary only, CGO-free
+```
 
-Local files are read, never written: the CLI that owns a token keeps rotating
-it. `x-goog-user-project` is sent for user credentials so quota is attributed to
-`gcp_quota_project` (defaults to `gcp_project_id`).
+`make app` needs the icon, which `scripts/make_icons.py` draws — one geometry in
+SVG that also produces the committed menu-bar template and `web/mark.svg`.
 
-The encryption key comes from `GAUGE_SECRET_KEY` (hashed) or, when unset, from
-`gauge.key` next to the database, generated on first start with mode `0600`.
+```
+cmd/gauge          Wails menu-bar shell
+cmd/gauge-server   headless HTTP entrypoint
+internal/app       wiring: store, engine, routes, auth
+internal/store     SQLite snapshots, run state, events, encrypted settings
+internal/engine    per-provider scheduling, cooldown, alert webhook
+internal/providers antigravity · gcp-billing · gcp-monitoring · colab · flow
+internal/browsercookie  read (and decrypt) cookies from the local Chrome profile
+web                index.html · app.css · app.js (no framework)
+```
 
-## Environment
+## Headless / environment
+
+```sh
+./gauge -db /var/lib/gauge/quota.db -addr 127.0.0.1:8090
+```
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GAUGE_ADDR` | `127.0.0.1:8090` | Listen address |
+| `GAUGE_ADDR` | `127.0.0.1:8090` | listen address |
 | `GAUGE_DB` | `quota.db` | SQLite file |
-| `GAUGE_KEY` | `<db dir>/gauge.key` | Encryption key file |
+| `GAUGE_KEY` | `<db dir>/gauge.key` | encryption key file |
+| `GAUGE_SECRET_KEY` | — | passphrase instead of a key file |
 | `GAUGE_AUTH` | — | `user:password` for HTTP Basic auth |
-| `GAUGE_ALLOW_PUBLIC` | — | Set to `1` to allow a non-loopback address without auth |
-| `HTTPS_PROXY` / `NO_PROXY` | — | Honoured by every collector |
+| `GAUGE_ALLOW_PUBLIC` | — | `1` allows a non-loopback bind without auth |
 
-The process refuses to bind a non-loopback address unless `GAUGE_AUTH` is set
-(or `GAUGE_ALLOW_PUBLIC=1` is explicitly given).
+Routes: `GET /api/overview`, `GET /api/quotas`, `GET|POST /api/settings`,
+`POST /api/refresh/{provider}` (60 s cooldown), `POST /api/refresh-all`,
+`GET /api/oauth/start`, `GET /oauth/callback`, `GET /api/health`.
 
-## Refresh cadence
-
-Each collector has a floor so the panel cannot be pointed at the upstream APIs at
-an abusive rate. Override under **Settings → Refresh**:
-
-| Collector | Default | Floor |
-| --- | --- | --- |
-| Antigravity | 5 min | 5 min |
-| Colab | 30 min | 30 min |
-| Google Flow | 30 min | 30 min |
-| Cloud Monitoring | 10 min | 10 min |
-| GCP billing | 6 h | 60 min |
-
-## API
-
-| Route | Description |
-| --- | --- |
-| `GET /api/overview` | Everything the page needs: quotas, runs, events, configured keys |
-| `GET /api/quotas` | Snapshot list only |
-| `GET/POST /api/settings` | Read field state (secrets masked) / write values |
-| `POST /api/refresh/{provider}` | Collect one provider, 60 s cooldown, `429` when hot |
-| `POST /api/refresh-all` | Collect every provider that is not cooling down |
-| `GET /api/oauth/start` | Returns the Google consent URL for the sign-in flow |
-| `GET /oauth/callback` | Loopback OAuth redirect, stores the refresh token |
-| `GET /api/health` | Uptime probe, no upstream calls |
-
-## Cookie-authenticated collectors
-
-Colab and Google Flow are gRPC-Web APIs that accept the browser session instead
-of OAuth. Both are called the same way:
-
-```
-POST https://<service>.clients6.google.com/$rpc/<proto.Service>/<Method>
-  content-type: application/json+protobuf
-  authorization: SAPISIDHASH <ts>_<sha1("<ts> <SAPISID> <origin>")> ...
-  x-goog-api-key: <the key the frontend ships>
-  body: [null,1]
-```
-
-Two details matter and both cost real debugging time:
-
-- duplicate cookie names across host keys make Google reject the whole header;
-  the browser reader keeps the most specific live entry per name
-- each product has its own API key; Colab's key against Flow answers 403
-  "blocked"
-
-## Browser cookies
-
-Colab (and any future cookie-authenticated source) can borrow the browser
-session instead of a pasted string. On macOS the panel reads
-`~/Library/Application Support/Google/Chrome/<profile>/Cookies`, decrypts the
-`v10` values with AES-128-CBC, and derives the key from the `Chrome Safe
-Storage` keychain item via PBKDF2-SHA1. One keychain prompt, then the key stays
-in memory.
-
-Nothing is written to disk: values live in memory for the duration of a request
-and the clipboard-friendly `colab_cookie` field remains as the fallback.
-
-## Notes
-
-- Colab has no public API. The collector reads the same endpoint the browser
-  uses, authenticated with your cookie, and parses the JSON structurally. If the
-  endpoint changes, update `colab_endpoint`; nothing else needs rebuilding.
-  A rejected cookie pauses Colab polling (`expired_auth`) until a new cookie is
-  saved.
-- `antigravity` uses the OAuth client that ships with Gemini CLI by default.
-  Supply your own `google_client_id` / `google_client_secret` if you prefer.
-- The dashboard loads no third-party assets; the CSP is `default-src 'self'`.
-- Google Flow is **not** integrated. It moved to `flow.google.com` (Angular SPA),
-  the old `labs.google/fx/api/auth/session` endpoint answers 410, and the
-  public Flow MCP projects drive generation without exposing a balance call.
-  Wiring it up needs one real request captured from the browser.
+The page loads no third-party assets; the CSP is `default-src 'self'`.

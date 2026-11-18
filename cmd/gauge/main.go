@@ -32,8 +32,6 @@ func main() {
 		logger.Fatalf("config dir: %v", err)
 	}
 	dataDir := filepath.Join(dir, "Gauge")
-	// One-time move from the pre-rename bundle so existing credentials survive.
-	migrateLegacy(filepath.Join(dir, "Gemini Broad"), dataDir)
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		logger.Fatalf("create %s: %v", dataDir, err)
 	}
@@ -149,31 +147,5 @@ func main() {
 
 	if err := ui.Run(); err != nil {
 		logger.Fatalf("run: %v", err)
-	}
-}
-
-// migrateLegacy copies the database and key from the old bundle directory once.
-func migrateLegacy(oldDir, newDir string) {
-	if _, err := os.Stat(newDir); err == nil {
-		return
-	}
-	if _, err := os.Stat(oldDir); err != nil {
-		return
-	}
-	if err := os.MkdirAll(newDir, 0o700); err != nil {
-		return
-	}
-	pairs := [][2]string{
-		{"quota.db", "quota.db"},
-		{"quota.db-wal", "quota.db-wal"},
-		{"quota.db-shm", "quota.db-shm"},
-		{"gpanel.key", "gauge.key"},
-	}
-	for _, p := range pairs {
-		raw, err := os.ReadFile(filepath.Join(oldDir, p[0]))
-		if err != nil {
-			continue
-		}
-		_ = os.WriteFile(filepath.Join(newDir, p[1]), raw, 0o600)
 	}
 }
