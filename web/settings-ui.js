@@ -76,6 +76,7 @@
     let overview = null;
     let current = null; // section id shown in the detail pane
     let editing = null; // secret key whose editor is open
+    let adding = false; // the "add a subscription" menu is open
     const openSetup = new Set(); // sections whose "Connection & refresh" the user opened
 
     root.classList.add('sx', `sx-${layout}`);
@@ -209,10 +210,40 @@
         <div class="sx-group">
           <h3 class="sx-caption">Subscriptions</h3>
           <div class="sx-card sx-sortlist" data-sort="groups">${groups.map(groupRow).join('')}</div>
+          ${renderAddSource()}
           <p class="sx-foot">Drag to reorder the menu bar. The switch shows or hides a subscription.</p>
         </div>
         <div class="sx-group">
           <div class="sx-card">${others.map(plainRow).join('')}</div>
+        </div>`;
+    }
+
+    // renderAddSource is the "+" row under the subscriptions: a new identity
+    // for Google AI, or a source that is not on the list yet.
+    function renderAddSource() {
+      const accounts = (overview && overview.accounts) || [];
+      const rows = [];
+      if (opts.oauth && accounts.length < 3) {
+        rows.push(`<button class="sx-link sx-add-row" type="button" data-oauth="${accounts.length ? 'add' : 'primary'}">
+          <span class="sx-add-icon">+</span>
+          <span class="sx-link-text"><b>Google AI account</b><span>Sign in another Google account</span></span>
+        </button>`);
+      }
+      for (const id of ['commandcode', 'opendesign', 'gcp']) {
+        const sec = sections.find((x) => x.id === id);
+        if (!sec) continue;
+        rows.push(`<button class="sx-link sx-add-row" type="button" data-section="${esc(id)}">
+          <span class="sx-add-icon">+</span>
+          <span class="sx-link-text"><b>${esc(sec.title)}</b><span>${esc(indexSummary(sec))}</span></span>
+        </button>`);
+      }
+      return `
+        <div class="sx-card sx-add">
+          <button class="sx-link sx-add-toggle" type="button" data-add-toggle aria-expanded="${adding}">
+            <span class="sx-add-icon">+</span>
+            <span class="sx-link-text"><b>Add a subscription</b></span>
+          </button>
+          ${adding ? `<div class="sx-add-list">${rows.join('')}</div>` : ''}
         </div>`;
     }
 
@@ -237,7 +268,7 @@
 
       const st = stateOf(sec);
       if (st) parts.push(renderStatus(sec, st));
-      if (sec.id === 'google') parts.push(renderAccounts());
+      if (sec.id === 'google') parts.push(renderAccountBlock());
       parts.push(renderCards(sec));
 
       // Sources split credentials from cadence; General keeps its own order.
@@ -421,33 +452,30 @@
     root.addEventListener('pointerup', endDrag);
     root.addEventListener('pointercancel', endDrag);
 
-    // renderAccounts lists the identities behind the Google groups. Order and
-    // visibility of each identity live in the subscription list, one row each;
-    // the identity this page belongs to is lifted to the top.
-    function renderAccounts() {
-      const accounts = (overview && overview.accounts) || [];
-      const pageSlot = (groupOf(current) || {}).slot;
-      const ordered = pageSlot
-        ? accounts.slice().sort((a, b) => (a.slot === pageSlot ? -1 : b.slot === pageSlot ? 1 : a.slot - b.slot))
-        : accounts;
-      const rows = ordered.map((a) => `
-        <div class="sx-row">
-          <span class="sx-avatar"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
-          <span class="sx-label"><b>${esc(a.name || a.email)}</b><span class="sx-help">${esc(a.email || '')}${a.tier ? ' · ' + esc(a.tier) : ''}</span></span>
-          ${a.slot > 1 && opts.oauth ? `<button class="sx-btn danger" type="button" data-remove-account="${a.slot}">Remove</button>` : ''}
-        </div>`).join('');
-      if (!rows && !opts.oauth) return '';
-      // Adding an identity is a page action, not a row in the account list.
-      const add = opts.oauth
-        ? `<button class="sx-btn" type="button" data-oauth="${accounts.length ? 'add' : 'primary'}">${accounts.length ? 'Add account' : 'Sign in with Google'}</button>`
-        : '';
+    // renderAccountBlock is the identity this page belongs to. Every Google
+    // identity is equal: the page only ever edits the one you opened, and
+    // Remove deletes that identity's local token.
+    function renderAccountBlock() {
+      const g = groupOf(current);
+      if (!g || !g.slot) {
+        return `
+          <div class="sx-group">
+            <h3 class="sx-caption">Account</h3>
+            <div class="sx-card"><div class="sx-row"><span class="sx-help">No account yet. Add one from the subscription list.</span></div></div>
+          </div>`;
+      }
+      const remove = g.slot > 1 && opts.oauth
+        ? `<button class="sx-btn danger" type="button" data-remove-account="${g.slot}">Remove account</button>` : '';
       return `
         <div class="sx-group">
-          <div class="sx-caption-row">
-            <h3 class="sx-caption">Google accounts</h3>
-            ${add}
+          <h3 class="sx-caption">Account</h3>
+          <div class="sx-card">
+            <div class="sx-row">
+              <span class="sx-avatar"><img src="/api/avatar/${g.slot}" alt="" onerror="this.remove()" /></span>
+              <span class="sx-label"><b>${esc(g.account_name || g.email)}</b><span class="sx-help">${esc(g.email || '')}${g.detail ? ' · ' + esc(g.detail) : ''}</span></span>
+              ${remove}
+            </div>
           </div>
-          <div class="sx-card">${rows || '<div class="sx-row"><span class="sx-help">No account yet. Sign in to add one.</span></div>'}</div>
         </div>`;
     }
 
@@ -621,6 +649,11 @@
 
     root.addEventListener('click', async (e) => {
       if (e.target.closest('[data-handle], .sx-switch')) return;
+      if (e.target.closest('[data-add-toggle]')) {
+        adding = !adding;
+        render();
+        return;
+      }
       const nav = e.target.closest('[data-section]');
       if (nav) {
         current = nav.dataset.section;
@@ -713,12 +746,14 @@
       }
       if (d.removeAccount) {
         t.disabled = true;
+        const removed = `google-${d.removeAccount}`;
         try {
           await api(`/api/accounts/${d.removeAccount}`, { method: 'DELETE' });
           toast('Account removed');
         } catch (err) {
           toast(err.message);
         }
+        if (current === removed) current = 'google';
         await reloadSection();
       }
     });

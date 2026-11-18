@@ -38,15 +38,24 @@
   font-weight: 600;
   color: var(--faint);
 }
-/* a caption with a page-level action on its right (e.g. Add account) */
-.sx-caption-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-right: var(--sx-pad-x);
+/* the "+" row that adds a subscription, and the sources it offers */
+.sx-add { margin-top: 8px; }
+.sx-add-toggle { color: var(--faint); font-weight: 550; }
+.sx-add-toggle[aria-expanded="true"] { color: var(--text); }
+.sx-add-toggle[aria-expanded="true"] .sx-add-icon { transform: rotate(45deg); }
+.sx-add-list { border-top: 1px solid var(--line); }
+.sx-add-row { color: var(--text); }
+.sx-add-row + .sx-add-row { border-top: 1px solid var(--line); }
+.sx-add-row .sx-link-text span { color: var(--faint); font-size: var(--sx-fs-sm); }
+.sx-add-icon {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--faint);
+  transition: transform 0.12s ease;
 }
-.sx-caption-row .sx-caption { margin: 0 0 5px var(--sx-pad-x); }
 .sx-card {
   background: var(--surface);
   border: 1px solid var(--line);
