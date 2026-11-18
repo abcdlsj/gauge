@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "gauge",
+  "outputfilename": "Gauge",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": { "name": "abcdlsj" },
+  "info": {
+    "companyName": "abcdlsj",
+    "productName": "Gauge",
+    "productVersion": "1.0.0",
+    "copyright": "",
+    "comments": "Quota and billing dashboard"
+  }
+}

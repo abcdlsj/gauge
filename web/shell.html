@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" data-shell="desktop">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>Gauge</title>
+<link rel="icon" href="/mark.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/desktop.css" />
+</head>
+<body>
+<div class="titlebar" style="--wails-draggable:drag">
+  <div class="lights">
+    <button class="light close" type="button" title="Close" onclick="window.runtime?.WindowClose()"></button>
+    <button class="light min" type="button" title="Minimise" onclick="window.runtime?.WindowMinimise()"></button>
+    <button class="light max" type="button" title="Zoom" onclick="window.runtime?.WindowToggleMaximise()"></button>
+  </div>
+</div>
+
+<aside class="dock">
+  <a class="dock-brand" href="#/usage" aria-label="Gauge">
+    <img src="/mark.svg" width="28" height="28" alt="" />
+    <span class="dock-word"><span>Gemini</span><span>Broad</span></span>
+  </a>
+
+  <nav class="dock-nav" aria-label="Sections">
+    <a href="#/usage" data-view="usage" title="Usage" aria-label="Usage">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 15V10M10 15V5M16 15V8" />
+      </svg>
+    </a>
+    <a href="#/activity" data-view="activity" title="Activity" aria-label="Activity">
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M4 6h12M4 10h12M4 14h7" />
+      </svg>
+    </a>
+  </nav>
+
+  <div class="dock-foot">
+    <div class="accounts" id="accounts"></div>
+    <button class="btn icon" id="refresh-all" title="Refresh all" aria-label="Refresh all">
+      <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M16.2 8.4A6.4 6.4 0 1 0 16 12.6M16.2 3.6v4.8h-4.8" />
+      </svg>
+    </button>
+    <button class="btn icon" id="theme" title="Theme" aria-label="Theme">
+      <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true"><path d="M10 3.5a6.5 6.5 0 1 0 6.5 6.5A5.2 5.2 0 0 1 10 3.5Z" fill="currentColor"/></svg>
+    </button>
+    <a class="btn icon" id="settings-link" href="/settings.html" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true">
+        <path fill="currentColor" d="M10 6.9A3.1 3.1 0 1 0 10 13.1 3.1 3.1 0 0 0 10 6.9Zm7 3.1c0-.4 0-.7-.1-1l1.4-1.1-1.5-2.6-1.7.6a7 7 0 0 0-1.7-1L13.1 3H9.9l-.3 1.9a7 7 0 0 0-1.7 1l-1.7-.6-1.5 2.6L6.1 9a7.6 7.6 0 0 0 0 2L4.7 12.1l1.5 2.6 1.7-.6c.5.4 1.1.8 1.7 1l.3 1.9h3.2l.3-1.9c.6-.2 1.2-.6 1.7-1l1.7.6 1.5-2.6-1.4-1.1c.1-.3.1-.6.1-1Z"/>
+      </svg>
+    </a>
+  </div>
+</aside>
+
+<main class="board">
+  <div class="banner" id="banner" hidden></div>
+  <div class="board-head">
+    <h1 class="board-title">Usage</h1>
+    <span class="sync" id="sync">loading…</span>
+  </div>
+
+  <section id="view-usage">
+    <div class="skeleton-note">Reading local snapshot…</div>
+  </section>
+
+  <section id="view-activity" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Collectors</h2><span class="hint">cadence · last run · next run</span></div>
+      <div class="runs" id="runs"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Activity</h2><span class="hint">state changes only</span></div>
+      <ul class="log" id="log"></ul>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

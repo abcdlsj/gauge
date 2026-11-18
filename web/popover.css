@@ -1,0 +1,363 @@
+/* Menubar popover: narrow, dense, one family per card. */
+
+:root {
+  --gemini: #2f6feb;
+  --claude: #d97757;
+  --colab: #f2a600;
+  --flow: #34a853;
+}
+
+[hidden] { display: none !important; }
+
+/* The page never scrolls: the shell sizes the window to the content and the
+   list or settings form scrolls inside it once the content is too tall. */
+html[data-shell="popover"] {
+  height: 100vh !important;
+  background: var(--bg) !important;
+}
+
+html[data-shell="popover"] body {
+  width: 372px;
+  display: block;
+  height: 100vh !important;
+  min-height: 0 !important;
+  overflow: hidden;
+  margin: 0;
+  /* The breathing room around the list; the window is the frame. */
+  padding: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  background: var(--bg);
+}
+
+html[data-shell="popover"] .panel {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  max-height: 100%;
+  /* app.css styles .panel as a standalone card; inside the popover the window
+     is the frame, so drop that padding/margin/radius. */
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ---------- header ---------- */
+
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 6px 7px;
+}
+.pop-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.pop-actions { display: flex; gap: 6px; }
+.pop-mark { display: block; }
+.pop-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+}
+.pop-btn:hover { background: var(--surface-2); color: var(--text); }
+
+/* ---------- account line ---------- */
+
+.pop-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.pop-account .avatar { width: 22px; height: 22px; padding: 1.5px; }
+.pop-account .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.pop-account .who b { font-size: 12.5px; font-weight: 550; color: var(--text); }
+.pop-account .plan {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(100deg, #4285f4, #9b72cb 55%, #d96570);
+  white-space: nowrap;
+}
+.pop-account .plan.pro { background: linear-gradient(100deg, #1a73e8, #34a853); }
+.pop-account .plan.free { background: var(--surface-2); color: var(--muted); }
+
+/* ---------- list rows ---------- */
+
+/* ---------- scroll areas ---------- */
+
+/* The list and the settings form share one geometry: the shell sizes the window
+   to the content up to popoverMaxHeight (cmd/gauge/main.go), and whatever
+   does not fit scrolls inside it. */
+.scroll-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A row cut by the bottom edge reads as a hard clip without help. The fade is
+   the hint that there is more below; popover.js sets .has-more only while the
+   area can still scroll, so nothing is veiled at either end. */
+.scroll-wrap::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 26px;
+  background: linear-gradient(rgba(0, 0, 0, 0) 10%, var(--bg));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.scroll-wrap.has-more::after { opacity: 1; }
+
+.pop-body {
+  padding: 0;
+  gap: 0;
+}
+
+.fam { display: block; }
+
+.fam-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px 2px;
+}
+.fam-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.fam-logo {
+  width: 13px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--gemini);
+}
+.fam-logo svg { width: 12px; height: 12px; }
+.fam[data-family="claude"] .fam-logo { color: var(--claude); }
+
+.win {
+  padding: 5px 14px 9px;
+}
+.win + .win { border-top: 1px solid var(--line); }
+
+.win-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.win-name { font-size: 12.5px; color: var(--muted); }
+.win-left { margin-left: auto; font-size: 11.5px; color: var(--faint); }
+.win-pct {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.win-pct i { font-size: 10.5px; font-style: normal; font-weight: 500; color: var(--muted); margin-left: 1px; }
+.win-pct.warning { color: var(--warn); }
+.win-pct.danger { color: var(--danger); }
+
+.meter {
+  display: grid;
+  grid-template-columns: repeat(40, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 5px;
+}
+.meter i {
+  height: 14px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--gemini) 16%, transparent);
+}
+.fam[data-family="claude"] .meter i { background: color-mix(in srgb, var(--claude) 16%, transparent); }
+.meter[data-tone="warning"] i { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.meter[data-tone="danger"] i { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.meter i.on { background: var(--gemini); }
+.fam[data-family="claude"] .meter i.on { background: var(--claude); }
+.meter[data-tone="warning"] i.on { background: var(--warn); }
+.meter[data-tone="danger"] i.on { background: var(--danger); }
+
+.win-reset {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.win-reset .clock { opacity: 0.75; }
+.win-reset b { font-weight: 500; }
+
+/* small collectors become plain rows */
+
+.mini-list { border-top: 1px solid var(--line); }
+.mini {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 14px;
+}
+.mini + .mini { border-top: 1px solid var(--line); }
+.mini .label { font-size: 12px; color: var(--muted); }
+.mini .spacer { flex: 1; }
+.mini .note { font-size: 10.5px; color: var(--faint); }
+.mini .value {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 74px;
+  justify-content: flex-end;
+}
+.mini .value span { font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.mini.notice { color: var(--muted); font-size: 12px; padding: 10px 14px; }
+
+/* ---------- footer ---------- */
+
+.pop-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px 3px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.pop-link { color: var(--muted); text-decoration: none; }
+.pop-link:hover { color: var(--text); }
+
+/* ---------- settings view ---------- */
+
+.set-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+}
+.set-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 6px;
+}
+.set-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.set-save {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 7px;
+  background: var(--text);
+  color: var(--bg);
+  cursor: pointer;
+}
+.set-save:disabled { opacity: 0.5; }
+.set-body {
+  padding: 2px 2px 10px;
+}
+.set-group { margin-bottom: 14px; }
+.set-group h3 {
+  margin: 0 0 6px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.set-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 2px 12px;
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.set-row + .set-row { border-top: 1px solid var(--line); }
+.set-row label {
+  flex: none;
+  width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+.set-row .ctl { flex: 1; min-width: 0; }
+.set-row input,
+.set-row select,
+.set-row textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: none;
+  border-radius: 7px;
+  padding: 6px 8px;
+  outline: none;
+  text-align: left;
+}
+.set-row input[type="number"] { text-align: right; }
+.set-row textarea { min-height: 46px; text-align: left; font-size: 11.5px; }
+.set-row input:focus,
+.set-row select:focus,
+.set-row textarea:focus { box-shadow: 0 0 0 2px var(--accent); }
+.set-row .hint { display: none; }
+.set-row .tick { color: var(--ok); font-size: 11px; }
+.set-note {
+  margin: 0;
+  padding: 0 4px 6px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+/* settings keeps the same brand line as home; only the account row and the
+   action icons give way */
+body.settings-open .pop-account,
+body.settings-open .pop-actions { display: none; }

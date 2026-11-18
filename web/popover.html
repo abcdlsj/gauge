@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-shell="popover">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>Gauge</title>
+<script>
+// Read the theme before the stylesheets paint, so the popover never flashes the
+// wrong palette. popover.js owns the rest of the cycle.
+(function () {
+  var stored = localStorage.getItem('gauge-theme') || 'auto';
+  var forced = new URLSearchParams(location.search).get('theme');
+  var theme = ['auto', 'light', 'dark'].includes(forced) ? forced : stored;
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+})();
+</script>
+<link rel="stylesheet" href="/app.css" />
+<link rel="stylesheet" href="/popover.css" />
+</head>
+<body>
+<div class="panel">
+<header class="pop-head">
+  <div class="pop-brand">
+    <img class="pop-mark" src="/mark.svg" width="22" height="22" alt="" />
+    <span>Gauge</span>
+  </div>
+  <div class="pop-actions">
+    <button class="pop-btn" id="theme" title="Theme: Follow system" aria-label="Theme: Follow system"></button>
+    <button class="pop-btn" id="refresh-all" title="Refresh" aria-label="Refresh">
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M16.2 8.4A6.4 6.4 0 1 0 16 12.6M16.2 3.6v4.8h-4.8" />
+      </svg>
+    </button>
+    <button class="pop-btn" id="open-settings" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <path fill="currentColor" d="M10 6.9A3.1 3.1 0 1 0 10 13.1 3.1 3.1 0 0 0 10 6.9Zm7 3.1c0-.4 0-.7-.1-1l1.4-1.1-1.5-2.6-1.7.6a7 7 0 0 0-1.7-1L13.1 3H9.9l-.3 1.9a7 7 0 0 0-1.7 1l-1.7-.6-1.5 2.6L6.1 9a7.6 7.6 0 0 0 0 2L4.7 12.1l1.5 2.6 1.7-.6c.5.4 1.1.8 1.7 1l.3 1.9h3.2l.3-1.9c.6-.2 1.2-.6 1.7-1l1.7.6 1.5-2.6-1.4-1.1c.1-.3.1-.6.1-1Z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<div class="pop-account" id="account"></div>
+
+<div class="scroll-wrap" id="list-scroll">
+  <main class="pop-body scroll-area" id="pop-body"></main>
+</div>
+
+<section class="set-view" id="view-settings" hidden>
+  <div class="set-head">
+    <button class="pop-btn" id="close-settings" title="Back" aria-label="Back">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+        <path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M11.5 5.5 7 10l4.5 4.5" />
+      </svg>
+    </button>
+    <span class="set-title">Settings</span>
+    <button class="set-save" id="save-settings" type="button">Save</button>
+  </div>
+  <div class="scroll-wrap">
+    <form id="settings-form" class="set-body scroll-area"><div id="settings-fields"></div></form>
+  </div>
+  <p class="set-note">Leave a field blank to keep its value. Secrets stay encrypted on this Mac.</p>
+</section>
+
+<footer class="pop-foot">
+  <span id="sync">syncing…</span>
+</footer>
+
+<div class="toast" id="toast" hidden></div>
+</div>
+<script src="/popover.js"></script>
+</body>
+</html>

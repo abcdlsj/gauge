@@ -1,0 +1,9 @@
+bin/
+build/icon/
+build/screenshots/
+quota.db
+quota.db-*
+gauge.key
+.DS_Store
+*.log
+__pycache__/
