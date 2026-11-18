@@ -38,6 +38,7 @@ type pendingAuth struct {
 	verifier string
 	redirect string
 	slot     int
+	back     string
 	expires  time.Time
 }
 
@@ -80,7 +81,13 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("slot")); err == nil && v >= 1 && v <= 3 {
 		slot = v
 	}
-	b.pending[state] = pendingAuth{verifier: verifier, redirect: redirect, slot: slot, expires: time.Now().Add(oauthStateTTL)}
+	// back is where the browser lands once the code is exchanged. The desktop
+	// shell has no page behind the popover, so it asks for a plain result page.
+	back := "/#settings"
+	if r.URL.Query().Get("back") == "none" {
+		back = ""
+	}
+	b.pending[state] = pendingAuth{verifier: verifier, redirect: redirect, slot: slot, back: back, expires: time.Now().Add(oauthStateTTL)}
 	b.mu.Unlock()
 
 	params := url.Values{}
@@ -103,7 +110,7 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	if errParam := query.Get("error"); errParam != "" {
-		renderCallback(w, false, "Authorization failed: "+errParam)
+		renderCallback(w, false, "Authorization failed: "+errParam, "/#settings")
 		return
 	}
 
@@ -116,11 +123,11 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	b.mu.Unlock()
 
 	if !ok || time.Now().After(p.expires) {
-		renderCallback(w, false, "This sign-in link expired. Start again from the panel.")
+		renderCallback(w, false, "This sign-in link expired. Start again from the panel.", "/#settings")
 		return
 	}
 	if code == "" {
-		renderCallback(w, false, "Google did not return an authorization code.")
+		renderCallback(w, false, "Google did not return an authorization code.", p.back)
 		return
 	}
 
@@ -130,7 +137,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	refresh, access, err := b.exchange(ctx, code, p)
 	if err != nil {
 		b.log.Printf("oauth: exchange failed: %v", err)
-		renderCallback(w, false, "Token exchange failed: "+err.Error())
+		renderCallback(w, false, "Token exchange failed: "+err.Error(), p.back)
 		return
 	}
 
@@ -139,7 +146,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 		key = fmt.Sprintf("antigravity_refresh_token_%d", p.slot)
 	}
 	if err := b.store.Set(ctx, key, refresh); err != nil {
-		renderCallback(w, false, "Could not store the credential: "+err.Error())
+		renderCallback(w, false, "Could not store the credential: "+err.Error(), p.back)
 		return
 	}
 	if account, err := b.userInfo(ctx, access); err == nil {
@@ -151,7 +158,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	b.engine.ResetCooldown()
 	b.log.Println("oauth: Antigravity account connected")
-	renderCallback(w, true, "Account connected. The panel refreshes within a few seconds.")
+	renderCallback(w, true, "Account connected. The panel refreshes within a few seconds.", p.back)
 }
 
 // exchange trades the authorization code for a refresh token.
@@ -260,8 +267,10 @@ func randomToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// renderCallback shows a minimal result page and bounces back to the panel.
-func renderCallback(w http.ResponseWriter, ok bool, message string) {
+// renderCallback shows a minimal result page and, when back is set, bounces
+// back to the panel. The desktop shell passes an empty back: there is no page
+// behind the popover to return to.
+func renderCallback(w http.ResponseWriter, ok bool, message, back string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	title := "Connected"
 	color := "#12805c"
@@ -269,10 +278,13 @@ func renderCallback(w http.ResponseWriter, ok bool, message string) {
 		title = "Sign-in failed"
 		color = "#c8403a"
 	}
+	refresh := ""
+	if back != "" {
+		refresh = fmt.Sprintf(`<meta http-equiv="refresh" content="2;url=%s">`, back)
+	}
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gauge · %s</title>
-<meta http-equiv="refresh" content="2;url=/#settings">
+<title>Gauge · %s</title>%s
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f7f4;color:#17191d;
 font:15px/1.5 "Avenir Next",Avenir,-apple-system,sans-serif}
@@ -282,5 +294,5 @@ p{margin:0;color:#71767e;font-size:13px}
 @media (prefers-color-scheme:dark){body{background:#0b0c0e;color:#e9eaec}.card{background:#131519}
 p{color:#8c919a}}
 </style></head><body><div class="card"><h1>%s</h1><p>%s</p></div></body></html>`,
-		title, color, title, message)
+		title, refresh, color, title, message)
 }

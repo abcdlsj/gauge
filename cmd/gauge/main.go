@@ -6,7 +6,9 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,10 +113,43 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// Google redirects back over http, but the popover lives in the app's own
+	// scheme. A loopback listener owns the callback path so the consent screen
+	// has an address it can reach.
+	oauthLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		logger.Fatalf("oauth listener: %v", err)
+	}
+	oauthBase := "http://" + oauthLn.Addr().String()
+	const oauthCallbackPath = "/oauth-callback"
+	oauthSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Antigravity's client whitelists the loopback path its own IDE uses
+		// (/oauth-callback), so the redirect must hit that one, not /oauth/callback.
+		if r.URL.Path != oauthCallbackPath {
+			http.NotFound(w, r)
+			return
+		}
+		a.Handler.ServeHTTP(w, r)
+	})}
+	go func() {
+		if err := oauthSrv.Serve(oauthLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Printf("oauth listener: %v", err)
+		}
+	}()
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/ui/height" && r.Method == http.MethodPost {
+		switch {
+		case r.URL.Path == "/api/ui/height" && r.Method == http.MethodPost:
 			fitHandler.ServeHTTP(w, r)
 			return
+		case r.URL.Path == "/api/oauth/start":
+			// Send the consent screen to the loopback listener; the panel has
+			// no page Google could redirect to. back=none keeps the result
+			// page from navigating to a web route the app does not serve.
+			q := r.URL.Query()
+			q.Set("redirect", oauthBase+oauthCallbackPath)
+			q.Set("back", "none")
+			r.URL.RawQuery = q.Encode()
 		}
 		a.Handler.ServeHTTP(w, r)
 	})
@@ -164,7 +199,10 @@ func main() {
 	})
 	tray.SetMenu(menu)
 
-	ui.OnShutdown(func() { _ = a.Close() })
+	ui.OnShutdown(func() {
+		_ = oauthSrv.Close()
+		_ = a.Close()
+	})
 
 	if err := ui.Run(); err != nil {
 		logger.Fatalf("run: %v", err)

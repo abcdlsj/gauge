@@ -92,6 +92,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("GET /api/oauth/start", broker.handleStart)
 	mux.HandleFunc("DELETE /api/accounts/{slot}", s.handleDeleteAccount)
 	mux.HandleFunc("GET /oauth/callback", broker.handleCallback)
+	// The desktop shell redirects to the path Antigravity's own client
+	// whitelists (/oauth-callback) because Google matches redirect URIs
+	// exactly. The web build keeps the documented /oauth/callback.
+	mux.HandleFunc("GET /oauth-callback", broker.handleCallback)
 	mux.HandleFunc("GET /mark.svg", s.handleMark)
 	mux.HandleFunc("GET /popover", func(w http.ResponseWriter, r *http.Request) {
 		raw, err := web.FS.ReadFile("popover.html")

@@ -785,20 +785,41 @@
       }
       try {
         const res = await api(path);
-        const popup = window.open(res.url, 'gauge-oauth', 'width=520,height=760');
-        if (!popup) {
+        // The popover has no browser tab to open, so the consent screen goes
+        // to the system browser. Everywhere else a popup keeps the panel in
+        // view while the user signs in.
+        const popup = await openConsent(res.url);
+        if (popup === null) {
+          toast('Finish sign-in in your browser');
+        } else if (!popup) {
           location.href = res.url;
           return;
+        } else {
+          toast('Finish sign-in in the popup');
         }
-        toast('Finish sign-in in the popup');
         let ticks = 0;
         const timer = setInterval(async () => {
           await reloadSection();
-          if (++ticks >= 18 || popup.closed) clearInterval(timer);
+          if (++ticks >= 18 || (popup && popup.closed)) clearInterval(timer);
         }, 5000);
       } catch (err) {
         toast(`Sign-in failed: ${err.message}`);
       }
+    }
+
+    // openConsent returns the popup it opened, null when the URL went to the
+    // desktop shell's default browser, or undefined when the popup was blocked.
+    async function openConsent(url) {
+      if (document.documentElement.dataset.shell === 'popover') {
+        try {
+          const runtime = await import('/wails/runtime.js');
+          await runtime.Browser.OpenURL(url);
+          return null;
+        } catch {
+          /* not the desktop shell; fall through to a popup */
+        }
+      }
+      return window.open(url, 'gauge-oauth', 'width=520,height=760') || undefined;
     }
 
     return { open, back, reload: reloadSection, current: () => current };
