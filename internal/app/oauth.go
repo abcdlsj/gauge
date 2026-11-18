@@ -156,7 +156,10 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	b.engine.ResetCooldown()
+	b.engine.ResetCooldown("antigravity")
+	// Collect right away: the next scheduled pass is minutes away, and until
+	// it runs the account cache still lists only the old identities.
+	go b.engine.RunOnce(context.Background(), "antigravity", true)
 	b.log.Println("oauth: Antigravity account connected")
 	renderCallback(w, true, "Account connected. The panel refreshes within a few seconds.", p.back)
 }

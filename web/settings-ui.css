@@ -325,6 +325,7 @@ textarea.sx-input { resize: vertical; min-height: 72px; font-family: ui-monospac
 .sx-sortrow.dragging .sx-handle { cursor: grabbing; opacity: 1; }
 .sx-sortlist > .sx-row { border-top: 1px solid var(--line); }
 .sx-sortlist.muted > .sx-row { opacity: 0.5; }
+
 .sx-link .sx-switch { margin-left: 4px; }
 .sx-foot { margin: 5px var(--sx-pad-x) 0; font-size: var(--sx-fs-sm); color: var(--faint); }
 

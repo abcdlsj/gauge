@@ -114,7 +114,8 @@
     }
 
     function section(id) {
-      return sections.find((s) => s.id === id);
+      return sections.find((s) => s.id === id)
+        || (id && id.startsWith('google-') ? sections.find((s) => s.id === 'google') : undefined);
     }
 
     function runsFor(sec) {
@@ -141,7 +142,7 @@
     // titleFor prefers the subscription name the server resolved ("Google AI
     // Ultra") over the static section title.
     function titleFor(sec) {
-      const g = groupOf(sec.id);
+      const g = groupOf(current) || groupOf(sec.id);
       return (g && g.title) || sec.title;
     }
 
@@ -182,15 +183,18 @@
       const groups = layoutGroups().filter((g) => section(g.id));
       const others = sections.filter((s) => !groupOf(s.id));
       const groupRow = (g) => {
-        const sec = section(g.id);
+        const sec = section(g.id) || {};
         const st = stateOf(sec);
         const state = st ? STATE_TEXT[st.status] || st.status : '';
         const sub = [g.detail, state].filter(Boolean).join(' · ');
         const active = g.id === current ? ' aria-current="true"' : '';
+        const avatar = g.slot
+          ? `<span class="sx-avatar"><img src="/api/avatar/${g.slot}" alt="" onerror="this.remove()" /></span>`
+          : `<span class="sx-dot ${esc(st ? st.status : 'none')}"></span>`;
         return `
           <div class="sx-link sx-sortrow" data-sort-id="${esc(g.id)}" data-section="${esc(g.id)}" role="button" tabindex="0"${active}>
-            ${handle(g.title)}
-            <span class="sx-dot ${esc(st ? st.status : 'none')}"></span>
+            ${handle(g.account_name || g.email || g.title)}
+            ${avatar}
             <span class="sx-link-text"><b>${esc(g.title)}</b><span>${esc(sub)}</span></span>
             ${visSwitch('group', g.id, !g.hidden, `Show ${g.title}`)}
             ${CHEVRON}
@@ -290,7 +294,7 @@
     // renderCards is level two: the subscription's own switch, then its
     // cards in menu-bar order, each with a handle and a switch.
     function renderCards(sec) {
-      const g = groupOf(sec.id);
+      const g = groupOf(current) || groupOf(sec.id);
       if (!g) return '';
       const rows = g.items.map((it) => `
         <div class="sx-row sx-sortrow" data-sort-id="${esc(it.id)}">
@@ -327,7 +331,7 @@
         groups: layoutGroups().map((g) => ({
           id: g.id,
           hidden: !!g.hidden,
-          items: g.items.map((it) => ({ id: it.id, hidden: !!it.hidden })),
+          items: (g.items || []).map((it) => ({ id: it.id, hidden: !!it.hidden })),
         })),
       };
       try {
@@ -345,11 +349,11 @@
       if (kind === 'group') {
         const g = groupOf(id);
         if (g) g.hidden = !visible;
-      } else {
-        for (const g of layoutGroups()) {
-          const it = g.items.find((x) => x.id === id);
-          if (it) it.hidden = !visible;
-        }
+        return;
+      }
+      for (const g of layoutGroups()) {
+        const it = g.items.find((x) => x.id === id);
+        if (it) it.hidden = !visible;
       }
     }
 
@@ -417,6 +421,8 @@
     root.addEventListener('pointerup', endDrag);
     root.addEventListener('pointercancel', endDrag);
 
+    // renderAccounts lists the identities behind the Google groups. Order and
+    // visibility of each identity live in the subscription list, one row each.
     function renderAccounts() {
       const accounts = (overview && overview.accounts) || [];
       const rows = accounts.map((a) => `

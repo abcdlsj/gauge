@@ -153,15 +153,14 @@ const shortNames = {
 
 // renderAccountLine is the Google identity under the subscription title:
 // avatar, name, email and the exact plan.
-function renderAccountLine(accounts, detail) {
-  const a = (accounts || [])[0];
+function renderAccountLine(a, detail) {
   if (!a) return '';
-  const tier = a.tier || '';
+  const tier = detail || a.tier || '';
   const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
   return `
     <div class="src-account">
       <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
-      <span class="who"><b>${esc(a.name || a.email || '')}</b>${a.name && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
+      <span class="who"><b>${esc(a.account_name || a.name || a.email || '')}</b>${(a.account_name || a.name) && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
       ${detail ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(detail)}</span>` : ''}
     </div>`;
 }
@@ -206,32 +205,40 @@ function renderMini(sn, label) {
 }
 
 // renderGroups stacks the visible subscriptions in the user's order; inside
-// each, the visible cards in the user's order.
+// each, the visible cards in the user's order. A subscription with several
+// identities renders one section per identity instead of one shared block.
 function renderGroups(overview) {
   const quotas = overview.quotas || [];
   const find = (it) => quotas.find((q) => q.provider === it.provider && q.metric === it.metric);
   return (overview.layout || []).filter((g) => !g.hidden).map((g) => {
     const cards = g.items.filter((it) => !it.hidden).map((it) => ({ it, sn: find(it) })).filter((c) => c.sn);
     if (!cards.length) return '';
-    const pools = cards.filter((c) => c.sn.series && c.sn.series.length).length;
-    const user = g.id !== 'google' && cards[0].sn.account
+    const user = !g.slot && cards[0].sn.account
       ? `<span class="src-user">${esc(cards[0].sn.account.split('@')[0])}</span>` : '';
-    const stale = cards.some((c) => c.sn.status === 'error' || c.sn.status === 'expired_auth');
-    const body = cards.map(({ it, sn }) => (sn.series && sn.series.length
-      // A lone plan card needs no label under the subscription title.
-      ? renderPool(sn, pools > 1 || cards.length > 1 ? it.label : '')
-      : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
     return `
-      <section class="src" data-group="${esc(g.id)}">
+      <section class="src" data-group="${esc(g.id)}"${g.slot ? ` data-slot="${g.slot}"` : ''}>
         <div class="src-head">
           <span class="src-name">${esc(g.title)}</span>
-          ${stale ? '<span class="src-stale" title="Last refresh failed; numbers may be old">stale</span>' : ''}
+          ${staleTag(cards)}
           ${user}
         </div>
-        ${g.id === 'google' ? renderAccountLine(overview.accounts, g.detail) : ''}
-        ${body}
+        ${g.slot ? renderAccountLine(g, g.detail) : ''}
+        ${bodyFor(cards)}
       </section>`;
   }).join('');
+}
+
+function staleTag(cards) {
+  return cards.some((c) => c.sn.status === 'error' || c.sn.status === 'expired_auth')
+    ? '<span class="src-stale" title="Last refresh failed; numbers may be old">stale</span>' : '';
+}
+
+function bodyFor(cards) {
+  const pools = cards.filter((c) => c.sn.series && c.sn.series.length).length;
+  return cards.map(({ it, sn }) => (sn.series && sn.series.length
+    // A lone plan card needs no label under the subscription title.
+    ? renderPool(sn, pools > 1 || cards.length > 1 ? it.label : '')
+    : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
 }
 
 function render(overview) {

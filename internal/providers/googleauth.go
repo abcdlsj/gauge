@@ -103,8 +103,8 @@ func (d *Deps) resolveCreds(ctx context.Context, src AuthSource) (credMaterial, 
 	}
 	c.saJSON = saJSON
 
-	switch src {
-	case SourceAntigravity:
+	switch {
+	case src == SourceAntigravity:
 		c.refreshToken = firstNonEmpty(
 			d.Setting(ctx, "antigravity_refresh_token"),
 			d.Setting(ctx, "google_refresh_token"),
@@ -121,12 +121,14 @@ func (d *Deps) resolveCreds(ctx context.Context, src AuthSource) (credMaterial, 
 			c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
 			c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
 		}
-	case SourceAntigravityAlt:
-		slot := strings.TrimPrefix(string(src), "antigravity-")
+	case strings.HasPrefix(string(src), string(SourceAntigravityAlt)):
+		// The caller passes the slot in the source name itself ("antigravity-2"),
+		// so this arm cannot be a constant case.
+		slot := strings.TrimPrefix(string(src), string(SourceAntigravityAlt))
 		c.refreshToken = d.Setting(ctx, "antigravity_refresh_token_"+slot)
 		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
 		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
-	case SourceGCP:
+	case src == SourceGCP:
 		adc := d.adcUserCreds(ctx)
 		c.refreshToken = firstNonEmpty(
 			d.Setting(ctx, "gcp_refresh_token"),

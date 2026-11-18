@@ -98,7 +98,11 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 			} else if card, ok := otherCard(credits, nil); ok {
 				local = append(local, card)
 			}
-			d.SetAccounts(ctx, collectAccounts(ctx, d, primary))
+			// Extra accounts do not depend on the primary one: a 403 on slot 1
+			// must not hide the quota of an account that still answers.
+			extra, extraAccounts := collectExtraAccounts(ctx, d)
+			local = append(local, extra...)
+			d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
 			return local, nil
 		}
 		return nil, err
@@ -120,7 +124,7 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 	extra, extraAccounts := collectExtraAccounts(ctx, d)
 	result = append(result, extra...)
 
-	d.SetAccounts(ctx, append(collectAccounts(ctx, d, primary), extraAccounts...))
+	d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
 	return result, nil
 }
 
@@ -177,6 +181,42 @@ func collectAccounts(ctx context.Context, d *Deps, primary model.Account) []mode
 		label.Slot = slot
 		out = append(out, label)
 	}
+	return out
+}
+
+// mergeAccounts keeps one entry per slot. The quota pass produces a richer
+// label for slots it could read (it carries the plan tier), while collectAccounts
+// covers slots whose quota call failed.
+func mergeAccounts(base, extra []model.Account) []model.Account {
+	bySlot := make(map[int]model.Account, len(base)+len(extra))
+	for _, list := range [][]model.Account{base, extra} {
+		for _, a := range list {
+			if a.Slot == 0 {
+				a.Slot = 1
+			}
+			prev, seen := bySlot[a.Slot]
+			if seen {
+				if a.Email == "" {
+					a.Email = prev.Email
+				}
+				if a.Name == "" {
+					a.Name = prev.Name
+				}
+				if a.Picture == "" {
+					a.Picture = prev.Picture
+				}
+				if a.Tier == "" {
+					a.Tier, a.TierID = prev.Tier, prev.TierID
+				}
+			}
+			bySlot[a.Slot] = a
+		}
+	}
+	out := make([]model.Account, 0, len(bySlot))
+	for _, a := range bySlot {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
 	return out
 }
 

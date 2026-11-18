@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/abcdlsj/gauge/internal/model"
@@ -18,10 +20,12 @@ import (
 const LayoutKey = "display_layout"
 
 // groupDef is a built-in group: which collectors feed it, in default order.
+// Slot is set when the group belongs to one signed-in identity (Google AI).
 type groupDef struct {
 	ID        string
 	Title     string
 	Providers []string
+	Slot      int
 }
 
 var groupDefs = []groupDef{
@@ -58,14 +62,20 @@ type LayoutItem struct {
 	Hidden   bool   `json:"hidden"`
 }
 
-// LayoutGroup is one subscription (level one).
+// LayoutGroup is one subscription (level one). Each signed-in Google
+// identity is its own group, so it can be ordered and hidden like any other
+// subscription and shows its own avatar and plan.
 type LayoutGroup struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	Detail    string       `json:"detail,omitempty"` // plan, e.g. "Ultra 5x"
-	Providers []string     `json:"providers"`
-	Hidden    bool         `json:"hidden"`
-	Items     []LayoutItem `json:"items"`
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Detail      string       `json:"detail,omitempty"` // plan, e.g. "Ultra 5x"
+	Providers   []string     `json:"providers"`
+	Hidden      bool         `json:"hidden"`
+	Items       []LayoutItem `json:"items"`
+	Slot        int          `json:"slot,omitempty"`         // 0 = not tied to one identity
+	Email       string       `json:"email,omitempty"`        // identity shown in the header
+	AccountName string       `json:"account_name,omitempty"` // display name of that identity
+	Picture     string       `json:"picture,omitempty"`
 }
 
 // StoredLayout is what the settings page writes: order plus hidden flags.
@@ -96,14 +106,7 @@ func (l StoredLayout) Validate() StoredLayout {
 		}
 		seenGroup[g.ID] = true
 		sg := StoredGroup{ID: g.ID, Hidden: g.Hidden}
-		for _, it := range g.Items {
-			p, m, ok := strings.Cut(it.ID, "/")
-			if !ok || p == "" || m == "" || len(it.ID) > 200 || seenItem[it.ID] || len(sg.Items) >= 200 {
-				continue
-			}
-			seenItem[it.ID] = true
-			sg.Items = append(sg.Items, it)
-		}
+		sg.Items, _ = validItems(g.Items, seenItem)
 		out.Groups = append(out.Groups, sg)
 	}
 	return out
@@ -119,6 +122,23 @@ func (e *Engine) storedLayout(ctx context.Context) (StoredLayout, bool) {
 		return StoredLayout{}, false
 	}
 	return l, true
+}
+
+// validItems drops malformed cards and duplicates, returning the kept list and
+// the ids it added to seen.
+func validItems(in []StoredItem, seen map[string]bool) ([]StoredItem, []string) {
+	var out []StoredItem
+	var added []string
+	for _, it := range in {
+		p, m, ok := strings.Cut(it.ID, "/")
+		if !ok || p == "" || m == "" || len(it.ID) > 200 || seen[it.ID] || len(out) >= 200 {
+			continue
+		}
+		seen[it.ID] = true
+		out = append(out, it)
+		added = append(added, it.ID)
+	}
+	return out, added
 }
 
 // defaultHiddenSet is used until a layout is stored.
@@ -139,7 +159,8 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 
 	// The groups this build knows, plus one per unknown collector so a new
 	// provider is never invisible.
-	defs := slices.Clone(groupDefs)
+	defs := googleGroupDefs(accounts)
+	defs = append(defs, groupDefs[1:]...)
 	owner := map[string]string{}
 	for _, d := range defs {
 		for _, p := range d.Providers {
@@ -160,9 +181,15 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 		for _, prov := range d.Providers {
 			var mine []model.Snapshot
 			for _, q := range quotas {
-				if q.Provider == prov && q.Kind != "note" {
-					mine = append(mine, q)
+				if q.Provider != prov || q.Kind == "note" {
+					continue
 				}
+				// A per-identity group only owns the cards that identity
+				// produced; the collector tags them with "@N".
+				if d.Slot > 0 && accountSlot(q.Metric) != d.Slot {
+					continue
+				}
+				mine = append(mine, q)
 			}
 			slices.SortStableFunc(mine, func(a, b model.Snapshot) int {
 				return rank(a.Metric) - rank(b.Metric)
@@ -192,49 +219,123 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 			storedGroup[g.ID] = g
 		}
 	}
-	for _, d := range defs {
-		if _, ok := storedGroup[d.ID]; !ok {
-			order = append(order, d.ID)
+	for i, d := range defs {
+		if _, ok := storedGroup[d.ID]; ok {
+			continue
 		}
+		// A new identity lands right after the previous identity group, not at
+		// the bottom of the list. Everything else appends in default order.
+		if d.Slot > 1 {
+			at := len(order)
+			for j := i - 1; j >= 0 && defs[j].Slot > 0; j-- {
+				if pos := slices.Index(order, defs[j].ID); pos >= 0 {
+					at = pos + 1
+					break
+				}
+			}
+			order = slices.Insert(order, at, d.ID)
+			continue
+		}
+		order = append(order, d.ID)
 	}
 
 	out := make([]LayoutGroup, 0, len(order))
 	for _, id := range order {
 		d := byID[id]
 		g := LayoutGroup{ID: d.ID, Title: d.Title, Providers: d.Providers, Items: []LayoutItem{}}
-		if d.ID == "google" {
-			g.Title, g.Detail = googleTitle(accounts)
-		}
 		sg, has := storedGroup[id]
 		g.Hidden = has && sg.Hidden
 
-		present := map[string]LayoutItem{}
-		for _, it := range cards[id] {
-			present[it.ID] = it
-		}
-		used := map[string]bool{}
-		if has {
-			for _, s := range sg.Items {
-				it, ok := present[s.ID]
-				if !ok || used[s.ID] {
-					continue
-				}
-				it.Hidden = s.Hidden
-				g.Items = append(g.Items, it)
-				used[s.ID] = true
+		if d.Slot > 0 {
+			if acc, ok := findAccount(accounts, d.Slot); ok {
+				g.Slot = d.Slot
+				g.Email = acc.Email
+				g.AccountName = acc.Name
+				g.Picture = acc.Picture
+				g.Title, g.Detail = googleTitleFor(acc)
 			}
 		}
-		for _, it := range cards[id] {
-			if used[it.ID] {
-				continue
-			}
-			// A card the stored layout has never seen follows the defaults.
-			it.Hidden = defaults[it.ID]
-			g.Items = append(g.Items, it)
-		}
+
+		g.Items = orderedItems(cards[id], sg.Items, defaults)
 		out = append(out, g)
 	}
 	return out
+}
+
+// orderedItems applies the stored order and hidden flags to the cards that
+// exist now; unseen cards join the end and follow the defaults.
+func orderedItems(cards []LayoutItem, stored []StoredItem, defaults map[string]bool) []LayoutItem {
+	present := map[string]LayoutItem{}
+	for _, it := range cards {
+		present[it.ID] = it
+	}
+	out := make([]LayoutItem, 0, len(cards))
+	used := map[string]bool{}
+	for _, s := range stored {
+		it, ok := present[s.ID]
+		if !ok || used[s.ID] {
+			continue
+		}
+		it.Hidden = s.Hidden
+		out = append(out, it)
+		used[s.ID] = true
+	}
+	for _, it := range cards {
+		if used[it.ID] {
+			continue
+		}
+		it.Hidden = defaults[it.ID]
+		out = append(out, it)
+	}
+	return out
+}
+
+// googleGroupDefs splits Google AI into one group per signed-in identity.
+// Slot 1 keeps the historic "google" id so stored layouts survive; extra
+// identities get "google-N".
+func googleGroupDefs(accounts []model.Account) []groupDef {
+	defs := []groupDef{{
+		ID:        "google",
+		Title:     "Google AI",
+		Providers: []string{"antigravity", "google-flow", "colab"},
+		Slot:      1,
+	}}
+	for _, a := range accounts {
+		if a.Slot <= 1 {
+			continue
+		}
+		defs = append(defs, groupDef{
+			ID:        fmt.Sprintf("google-%d", a.Slot),
+			Title:     "Google AI",
+			Providers: []string{"antigravity"},
+			Slot:      a.Slot,
+		})
+	}
+	slices.SortStableFunc(defs, func(a, b groupDef) int { return a.Slot - b.Slot })
+	return defs
+}
+
+func findAccount(accounts []model.Account, slot int) (model.Account, bool) {
+	for _, a := range accounts {
+		if a.Slot == slot {
+			return a, true
+		}
+	}
+	return model.Account{}, false
+}
+
+// accountSlot reads the slot the Antigravity collector appended to a metric
+// ("gemini_models@2"); every other card belongs to the primary identity.
+func accountSlot(metric string) int {
+	i := strings.LastIndex(metric, "@")
+	if i < 0 {
+		return 1
+	}
+	n, err := strconv.Atoi(metric[i+1:])
+	if err != nil || n < 2 {
+		return 1
+	}
+	return n
 }
 
 func rank(metric string) int {
@@ -244,15 +345,15 @@ func rank(metric string) int {
 	return len(metricOrder)
 }
 
-// googleTitle names the Google group after the subscription of the primary
-// account: "Google AI Ultra", "Google AI Pro". Detail keeps the exact plan.
-// Google renamed Google One AI Premium to Google AI Pro/Ultra in 2025, so the
-// title follows Google's own product names rather than the Gemini model name.
-func googleTitle(accounts []model.Account) (title, detail string) {
-	if len(accounts) == 0 || accounts[0].Tier == "" {
+// googleTitleFor names the Google group after the subscription of one account:
+// "Google AI Ultra", "Google AI Pro". Detail keeps the exact plan. Google
+// renamed Google One AI Premium to Google AI Pro/Ultra in 2025, so the title
+// follows Google's own product names rather than the Gemini model name.
+func googleTitleFor(account model.Account) (title, detail string) {
+	if account.Tier == "" {
 		return "Google AI", ""
 	}
-	tier := accounts[0].Tier
+	tier := account.Tier
 	l := strings.ToLower(tier)
 	switch {
 	case strings.Contains(l, "ultra"):
