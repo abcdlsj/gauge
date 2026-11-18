@@ -3,23 +3,24 @@
 
 Two marks share one renderer:
 
-  gauge    the default. A dial open at the bottom, cut into four segments;
-           three are full (thick), one is spent (a hairline track), and a
-           needle from the pivot points at the boundary. Reads as "3/4 left"
-           and names no vendor.
+  gauge    the default. A lowercase g for Gauge, drawn like the classic G:
+           the bowl is a ring open at the top right, and an orange dot in the
+           opening is the reading. Black or white plus that one orange.
   classic  the original four-colour G, turned into a meter: the colour arcs
            are butt-cut segments of a dial, the open mouth is the spent part,
            and the crossbar runs to a pivot at the centre, so it is a needle.
 
 Each mark is a list of primitives on a 22pt grid. Every output scales that same
 grid, so the menu bar template, the web mark and the app icon cannot drift.
-Coordinates are chosen so straight edges and the outer/inner ring edges land on
-whole pixels at 22px and 44px.
+Coordinates are chosen so straight edges and outer stroke edges land on whole
+pixels at 22px and 44px.
 
-  app icon   1024 canvas, 824 rounded card on Apple's grid -> AppIcon.icns (gauge)
+  app icon   1024 canvas, 824 rounded card on Apple's grid -> AppIcon.icns (gauge,
+             white g on a black card)
              plus a PNG of each mark's card for previews
   tray icon  22x22 (+44x44 retina) black-on-alpha template per mark
-  web mark   web/mark.svg (gauge) and web/mark-classic.svg
+  web mark   web/mark.svg (gauge, on its own small black card) and
+             web/mark-classic.svg (bare arcs)
 
 SVG is generated here so the geometry lives in one place; nothing binary is
 hand-edited. Run `make icons` after changing the numbers below.
@@ -45,59 +46,47 @@ GRID = 22.0
 # arc:  (kind, colour_key, cx, cy, radius, start_deg, end_deg, width, cap)
 #       degrees are counter-clockwise from the right edge, y up; the arc is
 #       drawn counter-clockwise from start to end.
-# line: (kind, colour_key, x0, y0, x1, y1, width, cap)
 # dot:  (kind, colour_key, cx, cy, radius)
-# path: (kind, colour_key, d_builder, width, cap) for the G's arc-into-bar.
-
-
-def _seg_angles(start: float, sweep: float, count: int, gap: float) -> list[tuple[float, float]]:
-    """Split a clockwise sweep from start into count arcs separated by gap degrees.
-
-    Returned as (from, to) pairs in counter-clockwise order for arc drawing.
-    """
-    seg = (sweep - gap * (count - 1)) / count
-    out = []
-    a = start
-    for _ in range(count):
-        out.append((a - seg, a))
-        a -= seg + gap
-    return out
+# path: (kind, colour_key, d, width, cap), d in grid units, scaled on output
 
 
 # --- gauge -----------------------------------------------------------------
-# The dial sits 1pt below centre: its opening is at the bottom, so this centres
-# it optically. Ring: centreline 6.5, width 3 -> edges at 5 and 8 from the
-# centre, i.e. whole pixels. Track: width 1 on the same centreline -> 6 and 7.
-G_CX, G_CY = 11.0, 12.0
-G_R = 6.5
-G_FULL_W = 3.0
-G_TRACK_W = 1.0
-G_START = 225.0  # bottom left, the dial reads clockwise from here
-G_SWEEP = 270.0
-G_SEGMENTS = 4
-G_FILLED = 3
-G_GAP = 16.0  # degrees between segments, about 1.8pt at the ring: survives 1x
-G_HUB = 1.5  # radius: a 3pt pivot, only a little wider than the needle
-G_NEEDLE_W = 2.0
-G_NEEDLE_LEN = 3.0  # tip cap ends at 4, a clear 1pt short of the ring
+# A lowercase g for Gauge, read as a meter, the way the classic G is. The bowl
+# is a ring open at the top right; the orange dot in the opening is the
+# reading. The tail hooks back left and up, which keeps it from reading as a 9.
+#
+# Stroke 3 on half-pixel centrelines, so every outer edge is a whole pixel:
+# bowl 5..17 x 2..14, stem 14..17, tail bottom 20. The glyph spans 2..20.
+G_W = 3.0
+G_CX, G_CY, G_R = 11.0, 8.0, 4.5
+# The bowl runs clockwise from OPEN degrees (12 o'clock = 0) round to the top;
+# the gap between them is the spent part.
+G_OPEN = 70.0
+G_STEM_X = G_CX + G_R
+G_STEM_END = 14.5
+G_TAIL_R = 4.0
+G_TAIL_END = 235.0  # clockwise from 12 o'clock, round the tail's own centre
+G_DOT_AT = 35.0
+G_DOT_R = 1.5
+
+
+def _clock(cx: float, cy: float, r: float, deg: float) -> tuple[float, float]:
+    """Point at deg clockwise from 12 o'clock, y down."""
+    t = math.radians(deg)
+    return cx + r * math.sin(t), cy - r * math.cos(t)
 
 
 def gauge_parts() -> list[tuple]:
-    parts: list[tuple] = []
-    segs = _seg_angles(G_START, G_SWEEP, G_SEGMENTS, G_GAP)
-    for i, (a0, a1) in enumerate(segs):
-        if i < G_FILLED:
-            parts.append(("arc", f"fill{i}", G_CX, G_CY, G_R, a0, a1, G_FULL_W, "butt"))
-        else:
-            parts.append(("arc", "track", G_CX, G_CY, G_R, a0, a1, G_TRACK_W, "butt"))
-    # The needle points into the gap between the last full and first spent
-    # segment: the reading.
-    boundary = segs[G_FILLED - 1][0] - G_GAP / 2
-    rad = math.radians(boundary)
-    tip = (G_CX + G_NEEDLE_LEN * math.cos(rad), G_CY - G_NEEDLE_LEN * math.sin(rad))
-    parts.append(("line", "needle", G_CX, G_CY, tip[0], tip[1], G_NEEDLE_W, "round"))
-    parts.append(("dot", "needle", G_CX, G_CY, G_HUB))
-    return parts
+    x0, y0 = _clock(G_CX, G_CY, G_R, G_OPEN)
+    bowl = f"M{x0:.3f} {y0:.3f}A{G_R} {G_R} 0 1 1 {G_CX} {G_CY - G_R}"
+    tx, ty = _clock(G_STEM_X - G_TAIL_R, G_STEM_END, G_TAIL_R, G_TAIL_END)
+    tail = f"M{G_STEM_X} {G_CY}V{G_STEM_END}A{G_TAIL_R} {G_TAIL_R} 0 0 1 {tx:.3f} {ty:.3f}"
+    dx, dy = _clock(G_CX, G_CY, G_R, G_DOT_AT)
+    return [
+        ("path", "ink", bowl, G_W, "butt"),
+        ("path", "ink", tail, G_W, "round"),
+        ("dot", "reading", dx, dy, G_DOT_R),
+    ]
 
 
 # --- classic ---------------------------------------------------------------
@@ -141,25 +130,14 @@ def classic_parts() -> list[tuple]:
 MARKS = {
     "gauge": {
         "parts": gauge_parts,
-        "colours": {
-            "fill0": "#2FD98A",
-            "fill1": "#2FD98A",
-            "fill2": "#2FD98A",
-            "track": "#FFFFFF",
-            "needle": "#FFFFFF",
-        },
-        # Spent track is dimmed in colour renderings only; the template keeps
-        # full alpha and relies on the stroke width, so it stays legible.
-        "opacity": {"track": 0.32},
-        # Web mark colours: the page background varies, so ink adapts.
-        "web_colours": {
-            "fill0": "#12A866",
-            "fill1": "#12A866",
-            "fill2": "#12A866",
-            "track": "#8A8F98",
-            "needle": "#8A8F98",
-        },
-        "card": "dark",
+        # Black and white only, plus one signal orange for the reading.
+        "colours": {"ink": "#FFFFFF", "reading": "#FF5A1F"},
+        "opacity": {},
+        # The web mark carries its own black card, so the white g reads on
+        # light and dark pages alike, whatever theme the page forces.
+        "web_colours": None,
+        "web_card": "#000000",
+        "card": "black",
     },
     "classic": {
         "parts": classic_parts,
@@ -205,11 +183,11 @@ def _elements(name: str, s: float, ox: float, oy: float, colour_of, opacity_of) 
             _k, _c, cx, cy, r, a0, w = p
             d = _arc_d(cx, cy, r, a0, 360.0, s) + f"H{cx * s:.3f}"
             out.append(f'<path d="{d}" fill="none" stroke="{colour}" stroke-width="{w * s:.3f}" stroke-linecap="butt" stroke-linejoin="round"{extra}/>')
-        elif kind == "line":
-            _k, _c, x0, y0, x1, y1, w, cap = p
+        elif kind == "path":
+            _k, _c, d, w, cap = p
             out.append(
-                f'<path d="M{x0 * s:.3f} {y0 * s:.3f}L{x1 * s:.3f} {y1 * s:.3f}" fill="none" stroke="{colour}" '
-                f'stroke-width="{w * s:.3f}" stroke-linecap="{cap}"{extra}/>'
+                f'<path transform="scale({s:.5f})" d="{d}" fill="none" stroke="{colour}" stroke-width="{w}" '
+                f'stroke-linecap="{cap}" stroke-linejoin="round"{extra}/>'
             )
         elif kind == "dot":
             _k, _c, cx, cy, r = p
@@ -239,8 +217,8 @@ def app_svg(name: str = "gauge", size: int = 1024) -> str:
     inset, card, radius = CARD_INSET * k, CARD_SIZE * k, CARD_RADIUS * k
     s = MARK_GRID_PX * k / GRID
     off = (size - MARK_GRID_PX * k) / 2
-    if m["card"] == "dark":
-        top, bottom, rim, rim_op = "#3A3E46", "#16181C", "#FFFFFF", 0.10
+    if m["card"] == "black":
+        top, bottom, rim, rim_op = "#000000", "#000000", "#FFFFFF", 0.12
     else:
         top, bottom, rim, rim_op = "#FFFFFF", "#F1F2F4", "#000000", 0.08
     marks = _elements(name, s, off, off, lambda c: m["colours"][c], lambda c: m["opacity"].get(c, 1.0))
@@ -269,8 +247,20 @@ def mark_svg(name: str = "gauge", size: int = 32) -> str:
     """The bare mark: no card, for the header of the web UIs and the favicon."""
     m = MARKS[name]
     colours = m["web_colours"] or m["colours"]
-    marks = _elements(name, size / GRID, 0, 0, lambda c: colours[c], lambda c: 1.0)
+    card = m.get("web_card")
+    if not card:
+        marks = _elements(name, size / GRID, 0, 0, lambda c: colours[c], lambda c: 1.0)
+        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+  {marks}
+</svg>
+"""
+    # A small app-icon card: the mark at 72% of the card, the card's corner
+    # in the same proportion as the app icon's.
+    inner = size * 0.72
+    off = (size - inner) / 2
+    marks = _elements(name, inner / GRID, off, off, lambda c: colours[c], lambda c: 1.0)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">
+  <rect width="{size}" height="{size}" rx="{size * CARD_RADIUS / CARD_SIZE:.2f}" fill="{card}"/>
   {marks}
 </svg>
 """
