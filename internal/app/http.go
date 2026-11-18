@@ -64,6 +64,22 @@ var settingSections = []sectionDef{
 		},
 	},
 	{
+		ID: "commandcode", Title: "Command Code", Providers: []string{"commandcode"},
+		Summary: "5-hour and weekly plan windows.",
+		Fields: []fieldDef{
+			{Key: "commandcode_api_key", Label: "API key", Kind: "secret", Placeholder: "user_…", Help: "Leave empty to use the Command Code CLI sign-in (~/.commandcode/auth.json).", Sensitive: true, Optional: true},
+			interval("commandcode", "Refresh every", 5, 2),
+		},
+	},
+	{
+		ID: "opendesign", Title: "Open Design", Providers: []string{"opendesign"},
+		Summary: "Design Plan windows and USD balance.",
+		Fields: []fieldDef{
+			{Key: "opendesign_control_key", Label: "Control key", Kind: "secret", Placeholder: "ck_…", Help: "Leave empty to use the Open Design CLI sign-in (~/.amr/config.json).", Sensitive: true, Optional: true},
+			interval("opendesign", "Refresh every", 5, 2),
+		},
+	},
+	{
 		ID: "colab", Title: "Colab", Providers: []string{"colab"},
 		Summary: "Compute-unit balance.",
 		Fields: []fieldDef{

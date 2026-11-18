@@ -57,6 +57,8 @@ var minInterval = map[string]time.Duration{
 	"google-flow":    30 * time.Minute,
 	"gcp-monitoring": 10 * time.Minute,
 	"gcp-billing":    60 * time.Minute,
+	"commandcode":    2 * time.Minute,
+	"opendesign":     2 * time.Minute,
 }
 
 // IntervalOverride resolves a user-configured cadence, clamped to the floor.

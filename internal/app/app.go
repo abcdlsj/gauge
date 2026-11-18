@@ -64,6 +64,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		providers.GCPMonitoring{},
 		providers.Colab{},
 		providers.GoogleFlow{},
+		providers.CommandCode{},
+		providers.OpenDesign{},
 	}, cfg.Logger)
 
 	s := &Server{store: st, engine: eng, log: cfg.Logger, start: time.Now(), onChange: cfg.OnSettingsChange}
