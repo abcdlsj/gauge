@@ -8,9 +8,8 @@ Two marks share one renderer:
            needle from the pivot points at the boundary. Reads as "3/4 left"
            and names no vendor.
   classic  the original four-colour G, turned into a meter: the colour arcs
-           are butt-cut segments of a dial, the open mouth is the spent part
-           (a grey hairline in colour, left open in the template), and the
-           crossbar runs to a pivot at the centre, so it is a needle.
+           are butt-cut segments of a dial, the open mouth is the spent part,
+           and the crossbar runs to a pivot at the centre, so it is a needle.
 
 Each mark is a list of primitives on a 22pt grid. Every output scales that same
 grid, so the menu bar template, the web mark and the app icon cannot drift.
@@ -117,10 +116,6 @@ C_OPENING = 42.0
 # the nicks between colours stay open in the 22pt template.
 C_SEGMENT_GAP = 14.0
 C_HUB = 1.5  # the bar's own half-width: the bar simply ends in a round pivot
-# The spent part, a hairline across the mouth. Colour renderings only: in the
-# 22pt template it would close the mouth and lose the G.
-C_TRACK_W = 1.0
-C_TRACK_INSET = 10.0
 
 # Clockwise-from-the-top arcs, matching Google's G: red over the top, yellow on
 # the left, green along the bottom, blue up the right side into the crossbar.
@@ -140,7 +135,6 @@ def classic_parts() -> list[tuple]:
     # to the pivot.
     parts.append(("arcbar", "blue", C_CX, C_CY, C_R, C_BLUE_START, C_W))
     parts.append(("dot", "blue", C_CX, C_CY, C_HUB))
-    parts.append(("arc", "track", C_CX, C_CY, C_R, C_TRACK_INSET, C_OPENING - C_TRACK_INSET, C_TRACK_W, "round"))
     return parts
 
 
@@ -174,10 +168,8 @@ MARKS = {
             "yellow": "#FBBC05",
             "green": "#34A853",
             "blue": "#4285F4",
-            "track": "#9AA0A6",
         },
-        "opacity": {"track": 0.7},
-        "template_skip": {"track"},
+        "opacity": {},
         "web_colours": None,
         "card": "light",
     },
@@ -198,14 +190,11 @@ def _arc_d(cx, cy, r, a0, a1, s) -> str:
     return f"M{x0:.3f} {y0:.3f}A{r * s:.3f} {r * s:.3f} 0 {large} 0 {x1:.3f} {y1:.3f}"
 
 
-def _elements(name: str, s: float, ox: float, oy: float, colour_of, opacity_of, template: bool = False) -> str:
+def _elements(name: str, s: float, ox: float, oy: float, colour_of, opacity_of) -> str:
     """SVG elements for a mark scaled by s (px per grid unit), offset by ox, oy."""
     out = []
-    skip = MARKS[name].get("template_skip", set()) if template else set()
     for p in MARKS[name]["parts"]():
         kind, key = p[0], p[1]
-        if key in skip:
-            continue
         colour, op = colour_of(key), opacity_of(key)
         extra = f' stroke-opacity="{op}"' if op < 1 else ""
         if kind == "arc":
@@ -289,7 +278,7 @@ def mark_svg(name: str = "gauge", size: int = 32) -> str:
 
 def tray_svg(px: int, name: str = "gauge") -> str:
     """The menu-bar template: black on alpha, macOS recolours it."""
-    marks = _elements(name, px / GRID, 0, 0, lambda c: "#000000", lambda c: 1.0, template=True)
+    marks = _elements(name, px / GRID, 0, 0, lambda c: "#000000", lambda c: 1.0)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{px}" height="{px}" viewBox="0 0 {px} {px}">
   {marks}
 </svg>
