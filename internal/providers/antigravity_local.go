@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/abcdlsj/gauge/internal/model"
@@ -249,15 +248,6 @@ func discoverHub() (hubDiscovery, error) {
 		}
 	}
 	return candidates[0], nil
-}
-
-// processAlive reports whether pid still exists.
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
 }
 
 // insecureClient accepts the language server's self-signed certificate. It only
