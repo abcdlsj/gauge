@@ -125,26 +125,57 @@ async function load() {
 
 /* ---------- views ---------- */
 
-const VIEWS = ['usage', 'activity'];
+// Routes: #/overview (the default; #/usage is the old name), #/source/<name>
+// for one source, #/activity.
+const SOURCE_ORDER = ['antigravity', 'commandcode', 'opendesign', 'colab', 'google-flow', 'gcp-monitoring', 'gcp-billing'];
 
-function currentView() {
-  const name = location.hash.replace(/^#\/?/, '');
-  return VIEWS.includes(name) ? name : 'usage';
+function route() {
+  const path = location.hash.replace(/^#\/?/, '');
+  if (path === 'activity') return { view: 'activity' };
+  const m = path.match(/^source\/(.+)$/);
+  if (m) return { view: 'source', source: decodeURIComponent(m[1]) };
+  return { view: 'usage' };
+}
+
+// sourceTabs lists the sources worth a tab: those with readings, or with a
+// run that needs attention. Sources that were never set up stay out.
+function sourceTabs() {
+  if (!overview) return [];
+  const withData = new Set((overview.quotas || []).map((q) => q.provider));
+  const runs = new Map((overview.runs || []).map((r) => [r.provider, r]));
+  return (overview.providers || [])
+    .filter((p) => withData.has(p.name) || (runs.get(p.name) && !['unconfigured', 'ok', 'running'].includes(runs.get(p.name).status)))
+    .sort((x, y) => (SOURCE_ORDER.indexOf(x.name) + 1 || 99) - (SOURCE_ORDER.indexOf(y.name) + 1 || 99));
+}
+
+function renderNav() {
+  const nav = $('#nav');
+  if (!nav || isDesktop()) return;
+  const r = route();
+  const link = (href, label, active) => `<a href="${href}"${active ? ' aria-current="page"' : ''}>${esc(label)}</a>`;
+  nav.innerHTML = [
+    link('#/overview', 'Overview', r.view === 'usage'),
+    ...sourceTabs().map((p) => link(`#/source/${encodeURIComponent(p.name)}`, p.title, r.view === 'source' && r.source === p.name)),
+    link('#/activity', 'Activity', r.view === 'activity'),
+  ].join('');
 }
 
 function showView() {
-  const view = currentView();
-  for (const name of VIEWS) {
+  const r = route();
+  for (const name of ['usage', 'source', 'activity']) {
     const el = $(`#view-${name}`);
-    if (el) el.hidden = name !== view;
+    if (el) el.hidden = name !== r.view;
   }
-  document.querySelectorAll('.nav a[data-view]').forEach((a) => {
-    if (a.dataset.view === view) a.setAttribute('aria-current', 'page');
+  document.querySelectorAll('.dock-nav a[data-view]').forEach((a) => {
+    if (a.dataset.view === r.view) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
   const title = document.querySelector('.board-title');
-  if (title) title.textContent = view === 'activity' ? 'Activity' : 'Usage';
-  if (view === 'activity') renderActivity();
+  if (title) title.textContent = r.view === 'activity' ? 'Activity' : 'Usage';
+  renderNav();
+  if (r.view === 'activity') renderActivity();
+  if (r.view === 'source') renderSource(r.source);
+  window.scrollTo(0, 0);
 }
 
 window.addEventListener('hashchange', showView);
@@ -162,7 +193,10 @@ function render() {
     firstRender = false;
   }
   renderAccounts();
+  renderNav();
   renderUsage();
+  const r = route();
+  if (r.view === 'source') renderSource(r.source);
   renderActivity();
   renderSync();
   refreshTickers();
@@ -227,8 +261,11 @@ function renderUsage() {
   const runs = new Map((overview.runs || []).map((r) => [r.provider, r]));
   const root = $('#view-usage');
 
+  // The overview shows what the menu bar shows; source tabs show everything.
+  const hidden = new Set(overview.hidden_cards || []);
   const byProvider = new Map();
   for (const q of quotas) {
+    if (hidden.has(`${q.provider}/${q.metric}`)) continue;
     if (!byProvider.has(q.provider)) byProvider.set(q.provider, []);
     byProvider.get(q.provider).push(q);
   }
@@ -236,7 +273,9 @@ function renderUsage() {
   const blocks = [];
   const compact = [];
 
-  for (const p of overview.providers || []) {
+  const ordered = (overview.providers || []).slice()
+    .sort((x, y) => (SOURCE_ORDER.indexOf(x.name) + 1 || 99) - (SOURCE_ORDER.indexOf(y.name) + 1 || 99));
+  for (const p of ordered) {
     const items = (byProvider.get(p.name) || []).slice().sort(compareSnapshots);
     const run = runs.get(p.name);
 
@@ -324,42 +363,6 @@ function renderUsage() {
     : everLoaded
       ? `<div class="empty"><b>No snapshots yet</b>Collectors are running; readings appear after the first successful poll.</div>`
       : skeletonUsage();
-
-  renderRail();
-}
-
-let railObserver = null;
-
-// renderRail builds the floating jump list. It stays hidden when a single
-// collector has data, since there is nowhere to jump.
-function renderRail() {
-  const rail = $('#rail');
-  if (!rail) return;
-  const groups = [...document.querySelectorAll('#view-usage .group')];
-  if (groups.length < 2) {
-    rail.hidden = true;
-    if (railObserver) railObserver.disconnect();
-    return;
-  }
-
-  rail.hidden = false;
-  rail.innerHTML = groups.map((g) => `
-    <a href="#${esc(g.id)}" data-target="${esc(g.id)}" title="${esc(g.dataset.title || g.id)}">
-      <span class="rail-dot"></span>
-      <span class="rail-label">${esc(g.dataset.title || g.id)}</span>
-    </a>`).join('');
-
-  if (railObserver) railObserver.disconnect();
-  railObserver = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      rail.querySelectorAll('a').forEach((a) => {
-        if (a.dataset.target === entry.target.id) a.setAttribute('data-active', '');
-        else a.removeAttribute('data-active');
-      });
-    }
-  }, { rootMargin: '-40% 0px -50% 0px' });
-  groups.forEach((g) => railObserver.observe(g));
 }
 
 // Lowest remaining ratio first; informational cards sink to the end.
@@ -411,10 +414,61 @@ function renderCompactCard(provider, sn) {
 function groupHead(provider, count) {
   const run = (overview.runs || []).find((r) => r.provider === provider.name);
   const status = run ? run.status : 'idle';
+  const title = isDesktop()
+    ? esc(provider.title)
+    : `<a href="#/source/${encodeURIComponent(provider.name)}">${esc(provider.title)}</a>`;
   return `
     <div class="group-head">
-      <h2><span class="dot ${esc(status)}"></span>${esc(provider.title)}</h2>
+      <h2><span class="dot ${esc(status)}"></span>${title}</h2>
     </div>`;
+}
+
+// settingsSection maps a provider onto its page in settings.html.
+function settingsSection(name) {
+  return name.startsWith('gcp-') ? 'gcp' : name;
+}
+
+// renderSource is one source's tab: its state, every card it produced
+// (hidden ones included) and the actions that apply to it.
+function renderSource(name) {
+  const root = $('#view-source');
+  if (!root || !overview) return;
+  const p = (overview.providers || []).find((x) => x.name === name);
+  if (!p) {
+    root.innerHTML = `<div class="empty"><b>Unknown source</b>${esc(name)} is not collected by this panel.</div>`;
+    return;
+  }
+  const run = (overview.runs || []).find((r) => r.provider === name);
+  const status = run ? run.status : 'idle';
+  const items = (overview.quotas || []).filter((q) => q.provider === name).sort(compareSnapshots);
+  const notes = items.filter((i) => i.kind === 'note');
+  const cards = items.filter((i) => i.kind !== 'note');
+  const meta = [
+    `every ${fmtDuration(p.interval_seconds)}`,
+    run && run.last_run ? `last <b data-ago="${run.last_run}"></b>` : 'not run yet',
+    run && run.next_run ? `next <b data-in="${run.next_run}"></b>` : '',
+  ].filter(Boolean).join(' · ');
+  const problem = run && run.error && status !== 'ok'
+    ? `<article class="card notice" data-state="${esc(status)}">
+         <div class="card-top"><span class="card-metric">last run</span><span class="chip ${esc(status)}">${esc(labelForStatus(status))}</span></div>
+         <p class="notice-text">${esc(trim(run.error, 400))}</p>
+       </article>`
+    : '';
+  root.innerHTML = `
+    <section class="group">
+      <div class="group-head source-head">
+        <h2><span class="dot ${esc(status)}"></span>${esc(p.title)}</h2>
+        <span class="hint">${meta}</span>
+        <span class="source-actions">
+          <a class="btn" href="/settings.html#${encodeURIComponent(settingsSection(name))}">Settings</a>
+          <button class="btn" type="button" data-provider="${esc(name)}">Refresh</button>
+        </span>
+      </div>
+      ${problem ? `<div class="grid">${problem}</div>` : ''}
+      ${notes.map(renderGroupNote).join('')}
+      ${cards.length ? `<div class="grid">${cards.map(renderCard).join('')}</div>` : problem ? '' : '<div class="empty"><b>No readings yet</b>They appear after the first successful poll.</div>'}
+    </section>`;
+  refreshTickers();
 }
 
 // renderGroupNote folds plan/tier information into a single line above the grid.
@@ -620,20 +674,13 @@ async function refreshAll(button) {
 }
 
 $('#refresh-all').addEventListener('click', (e) => refreshAll(e.currentTarget));
-const railEl = $('#rail');
-if (railEl) {
-  railEl.addEventListener('click', (e) => {
-    const link = e.target.closest('a[data-target]');
-    if (!link) return;
-    e.preventDefault();
-    document.getElementById(link.dataset.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+for (const id of ['#view-usage', '#view-source']) {
+  const el = $(id);
+  if (el) el.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-provider]');
+    if (btn) refreshProvider(btn.dataset.provider, btn);
   });
 }
-const usageEl = $('#view-usage');
-if (usageEl) usageEl.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-provider]');
-  if (btn) refreshProvider(btn.dataset.provider, btn);
-});
 
 /* ---------- boot ---------- */
 

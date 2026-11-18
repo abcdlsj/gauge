@@ -300,6 +300,37 @@ func (a *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"removed": key})
 }
 
+// handleDisplay stores which cards the menu bar and the overview show.
+func (a *Server) handleDisplay(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		HiddenCards []string `json:"hidden_cards"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if len(payload.HiddenCards) > 500 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many cards"})
+		return
+	}
+	hidden := make([]string, 0, len(payload.HiddenCards))
+	seen := map[string]bool{}
+	for _, id := range payload.HiddenCards {
+		provider, metric, ok := strings.Cut(id, "/")
+		if !ok || provider == "" || metric == "" || len(id) > 200 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		hidden = append(hidden, id)
+	}
+	raw, _ := json.Marshal(hidden)
+	if err := a.store.Set(r.Context(), engine.HiddenCardsKey, string(raw)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hidden_cards": hidden})
+}
+
 // validateField rejects values the collectors could not use.
 func validateField(f fieldDef, value string) error {
 	switch f.Kind {

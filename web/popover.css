@@ -3,8 +3,8 @@
 :root {
   --gemini: #2f6feb;
   --claude: #d97757;
-  --colab: #f2a600;
-  --flow: #34a853;
+  --commandcode: #7c5cff;
+  --opendesign: #0e9f8e;
 }
 
 [hidden] { display: none !important; }
@@ -76,32 +76,41 @@ html[data-shell="popover"] .panel {
 }
 .pop-btn:hover { background: var(--surface-2); color: var(--text); }
 
-/* ---------- account line ---------- */
+/* ---------- sources ---------- */
 
-.pop-account {
+/* Each source is one block; blocks stack top to bottom. */
+.src { padding-bottom: 4px; }
+.src + .src { border-top: 1px solid var(--line); }
+.src-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px 10px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--muted);
+  padding: 9px 14px 1px;
+  min-height: 30px;
 }
-.pop-account .avatar { width: 22px; height: 22px; padding: 1.5px; }
-.pop-account .who { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.pop-account .who b { font-size: 12.5px; font-weight: 550; color: var(--text); }
-.pop-account .plan {
-  margin-left: auto;
-  font-size: 11px;
+.src-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.src-stale {
+  font-size: 10px;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.src-user { margin-left: auto; font-size: 11px; color: var(--faint); }
+.src-account { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.src-account .avatar { width: 18px; height: 18px; padding: 1px; }
+.src-account .plan {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
   border-radius: 999px;
   color: #fff;
   background: linear-gradient(100deg, #4285f4, #9b72cb 55%, #d96570);
   white-space: nowrap;
 }
-.pop-account .plan.pro { background: linear-gradient(100deg, #1a73e8, #34a853); }
-.pop-account .plan.free { background: var(--surface-2); color: var(--muted); }
+.src-account .plan.pro { background: linear-gradient(100deg, #1a73e8, #34a853); }
+.src-account .plan.free { background: var(--surface-2); color: var(--muted); }
 
 /* ---------- list rows ---------- */
 
@@ -145,51 +154,60 @@ html[data-shell="popover"] .panel {
   gap: 0;
 }
 
-.fam { display: block; }
+.fam { display: block; --tint: var(--gemini); }
+.fam[data-family="claude"] { --tint: var(--claude); }
+.fam[data-family="commandcode"] { --tint: var(--commandcode); }
+.fam[data-family="opendesign"] { --tint: var(--opendesign); }
 
 .fam-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 14px 2px;
+  gap: 6px;
+  padding: 5px 14px 0;
 }
 .fam-name {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--faint);
 }
 .fam-logo {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   display: grid;
   place-items: center;
-  color: var(--gemini);
+  color: var(--tint);
 }
-.fam-logo svg { width: 12px; height: 12px; }
-.fam[data-family="claude"] .fam-logo { color: var(--claude); }
+.fam-logo svg { width: 11px; height: 11px; }
 
-.win {
-  padding: 5px 14px 9px;
-}
-.win + .win { border-top: 1px solid var(--line); }
+.win { padding: 4px 14px 6px; }
 
 .win-top {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
-.win-name { font-size: 12.5px; color: var(--muted); }
-.win-left { margin-left: auto; font-size: 11.5px; color: var(--faint); }
+.win-name { font-size: 12px; color: var(--muted); }
+.win-reset {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.win-reset .clock { opacity: 0.75; }
+.win-reset b { font-weight: 500; }
+.win-reset b.soon { color: var(--warn); }
 .win-pct {
-  font-size: 20px;
+  margin-left: auto;
+  font-size: 17px;
   font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
-.win-pct i { font-size: 10.5px; font-style: normal; font-weight: 500; color: var(--muted); margin-left: 1px; }
+.win-pct i { font-size: 10px; font-style: normal; font-weight: 500; color: var(--faint); margin-left: 2px; }
 .win-pct.warning { color: var(--warn); }
 .win-pct.danger { color: var(--danger); }
 
@@ -197,42 +215,27 @@ html[data-shell="popover"] .panel {
   display: grid;
   grid-template-columns: repeat(40, minmax(0, 1fr));
   gap: 2px;
-  margin-top: 5px;
+  margin-top: 4px;
 }
 .meter i {
-  height: 14px;
+  height: 9px;
   border-radius: 1px;
-  background: color-mix(in srgb, var(--gemini) 16%, transparent);
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
 }
-.fam[data-family="claude"] .meter i { background: color-mix(in srgb, var(--claude) 16%, transparent); }
 .meter[data-tone="warning"] i { background: color-mix(in srgb, var(--warn) 16%, transparent); }
 .meter[data-tone="danger"] i { background: color-mix(in srgb, var(--danger) 16%, transparent); }
-.meter i.on { background: var(--gemini); }
-.fam[data-family="claude"] .meter i.on { background: var(--claude); }
+.meter i.on { background: var(--tint); }
 .meter[data-tone="warning"] i.on { background: var(--warn); }
 .meter[data-tone="danger"] i.on { background: var(--danger); }
 
-.win-reset {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--faint);
-}
-.win-reset .clock { opacity: 0.75; }
-.win-reset b { font-weight: 500; }
-
 /* small collectors become plain rows */
 
-.mini-list { border-top: 1px solid var(--line); }
 .mini {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 9px 14px;
+  padding: 6px 14px;
 }
-.mini + .mini { border-top: 1px solid var(--line); }
 .mini .label { font-size: 12px; color: var(--muted); }
 .mini .spacer { flex: 1; }
 .mini .note { font-size: 10.5px; color: var(--faint); }
@@ -291,7 +294,5 @@ html[data-shell="popover"] .panel {
   padding: 2px 0 10px;
 }
 
-/* settings keeps the same brand line as home; only the account row and the
-   action icons give way */
-body.settings-open .pop-account,
+/* settings keeps the same brand line as home; only the action icons give way */
 body.settings-open .pop-actions { display: none; }

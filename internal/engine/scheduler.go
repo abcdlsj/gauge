@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"math/rand/v2"
@@ -69,6 +70,30 @@ type Overview struct {
 	Accounts    []model.Account      `json:"accounts"`
 	Settings    map[string]bool      `json:"settings"`
 	Cooldown    map[string]time.Time `json:"cooldown"`
+	// HiddenCards lists the "provider/metric" cards the user turned off in the
+	// menu bar and on the overview page.
+	HiddenCards []string `json:"hidden_cards"`
+}
+
+// HiddenCardsKey stores the card visibility as a JSON array of
+// "provider/metric" ids.
+const HiddenCardsKey = "display_hidden_cards"
+
+// defaultHiddenCards applies until the user picks: the catch-all model pool
+// is noise next to the Gemini and Claude pools.
+var defaultHiddenCards = []string{"antigravity/other_models"}
+
+// HiddenCards returns the stored visibility, or the default when unset.
+func (e *Engine) HiddenCards(ctx context.Context) []string {
+	raw, ok, err := e.store.Get(ctx, HiddenCardsKey)
+	if err != nil || !ok {
+		return append([]string(nil), defaultHiddenCards...)
+	}
+	var out []string
+	if json.Unmarshal([]byte(raw), &out) != nil {
+		return append([]string(nil), defaultHiddenCards...)
+	}
+	return out
 }
 
 // Start launches one goroutine per provider. Each loop collects immediately,
@@ -372,6 +397,7 @@ func (e *Engine) Overview(ctx context.Context) (Overview, error) {
 		Accounts:    e.deps.Accounts(),
 		Settings:    settings,
 		Cooldown:    cooldown,
+		HiddenCards: e.HiddenCards(ctx),
 	}, nil
 }
 

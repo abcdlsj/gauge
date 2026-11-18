@@ -184,6 +184,7 @@
       const st = stateOf(sec);
       if (st) parts.push(renderStatus(sec, st));
       if (sec.id === 'antigravity') parts.push(renderAccounts());
+      parts.push(renderCards(sec));
 
       // Sources split credentials from cadence; General keeps its own order.
       const fields = sec.fields.filter((f) => f.key !== ICON_KEY);
@@ -205,7 +206,6 @@
           </div>`);
       }
       if (sec.id === 'general') parts.push(renderAppearance(sec.fields.find((f) => f.key === ICON_KEY)));
-      if (opts.extraSection) parts.push(opts.extraSection(sec, overview) || '');
       return parts.join('');
     }
 
@@ -229,6 +229,30 @@
               <button class="sx-btn" type="button" data-refresh="${esc(sec.providers.join(','))}">Refresh now</button>
             </div>
           </div>
+        </div>`;
+    }
+
+    // renderCards lists the cards this source produced, each with a switch for
+    // the menu bar and the overview page. Detail pages always show them all.
+    function renderCards(sec) {
+      const quotas = ((overview && overview.quotas) || [])
+        .filter((q) => sec.providers.includes(q.provider) && q.kind !== 'note');
+      if (!quotas.length) return '';
+      const hidden = new Set((overview && overview.hidden_cards) || []);
+      const rows = quotas.map((q) => {
+        const id = `${q.provider}/${q.metric}`;
+        const windows = q.series && q.series.length ? q.series.map((x) => x.label).join(' · ') : '';
+        const sub = [sec.providers.length > 1 ? titleOf(q.provider) : '', windows, q.account || ''].filter(Boolean).join(' · ');
+        return `
+          <div class="sx-row">
+            <span class="sx-label"><b>${esc(q.label)}</b>${sub ? `<span class="sx-help">${esc(sub)}</span>` : ''}</span>
+            <label class="sx-switch"><input type="checkbox" data-card="${esc(id)}"${hidden.has(id) ? '' : ' checked'} /><span></span></label>
+          </div>`;
+      }).join('');
+      return `
+        <div class="sx-group">
+          <h3 class="sx-caption">Show in menu bar &amp; overview</h3>
+          <div class="sx-card">${rows}</div>
         </div>`;
     }
 
@@ -527,6 +551,10 @@
 
     root.addEventListener('change', (e) => {
       const t = e.target;
+      if (t.dataset.card) {
+        setCardVisible(t.dataset.card, t.checked).then((ok) => { if (!ok) t.checked = !t.checked; });
+        return;
+      }
       if (t.dataset.switch) {
         const f = fieldOf(t.dataset.switch);
         if (!f) return;
@@ -557,6 +585,21 @@
         }
       }
     });
+
+    async function setCardVisible(id, visible) {
+      const hidden = new Set((overview && overview.hidden_cards) || []);
+      if (visible) hidden.delete(id);
+      else hidden.add(id);
+      try {
+        const res = await api('/api/display', { method: 'PUT', body: JSON.stringify({ hidden_cards: [...hidden] }) });
+        if (overview) overview.hidden_cards = res.hidden_cards;
+        if (opts.onSaved) opts.onSaved();
+        return true;
+      } catch (err) {
+        toast(err.message);
+        return false;
+      }
+    }
 
     async function startOAuth(extra) {
       let path = '/api/oauth/start';

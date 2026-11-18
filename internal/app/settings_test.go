@@ -175,3 +175,20 @@ func TestIconSetting(t *testing.T) {
 		t.Fatalf("OnSettingsChange calls = %v", got)
 	}
 }
+
+func TestDisplayHiddenCards(t *testing.T) {
+	a := newTestApp(t)
+	_, ov := do(t, a, http.MethodGet, "/api/overview", "")
+	if got := ov["hidden_cards"].([]any); len(got) != 1 || got[0] != "antigravity/other_models" {
+		t.Fatalf("default hidden = %v", got)
+	}
+	code, out := do(t, a, http.MethodPut, "/api/display", `{"hidden_cards":["colab/compute_units","bad","colab/compute_units"]}`)
+	if code != 200 || len(out["hidden_cards"].([]any)) != 1 {
+		t.Fatalf("put: %d %v", code, out)
+	}
+	do(t, a, http.MethodPut, "/api/display", `{"hidden_cards":[]}`)
+	_, ov = do(t, a, http.MethodGet, "/api/overview", "")
+	if got := ov["hidden_cards"].([]any); len(got) != 0 {
+		t.Fatalf("an explicit empty list must stick, got %v", got)
+	}
+}

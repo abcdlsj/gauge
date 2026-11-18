@@ -56,6 +56,8 @@ deleted).
 | GCP billing | 6 h | BigQuery billing export, incremental over `_PARTITIONTIME` |
 | Colab | 30 min | `clients6.google.com` GetUserInfo — compute units, accelerator classes |
 | Google Flow | 30 min | VideoFx GetCredits — video credit balance and reset date |
+| Command Code | 5 min | `/alpha/billing/credits` — 5-hour and weekly plan windows, credits; key from settings or `~/.commandcode/auth.json` |
+| Open Design | 5 min | workspace billing preflight — Design Plan windows, USD balance; control key from settings or `~/.amr/config.json` |
 
 Antigravity is read from the running IDE first: `hub_<port>.json` gives the pid,
 port and CSRF token of its language server, and Gauge makes the same loopback
@@ -137,6 +139,10 @@ are often different accounts:
 Optional: `webhook_url` receives a JSON alert when a provider changes state;
 `browser_cookies` (default `chrome`) reuses the local Chrome profile instead of a
 pasted cookie.
+
+The popover stacks every source with a visible card. Each source's settings
+page has a switch per card (`display_hidden_cards`), which also applies to the
+web Overview; the web build adds one tab per source with all of its cards.
 
 ## Build from source
 

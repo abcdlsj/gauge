@@ -45,13 +45,18 @@ def fixture_overview() -> dict:
         "started_at": now(-timedelta(hours=6)),
         "providers": [
             {"name": "antigravity", "title": "Antigravity", "interval_seconds": 300},
+            {"name": "commandcode", "title": "Command Code", "interval_seconds": 300},
+            {"name": "opendesign", "title": "Open Design", "interval_seconds": 300},
             {"name": "colab", "title": "Colab", "interval_seconds": 1800},
             {"name": "google-flow", "title": "Google Flow", "interval_seconds": 1800},
             {"name": "gcp-billing", "title": "GCP billing", "interval_seconds": 21600},
             {"name": "gcp-monitoring", "title": "GCP monitoring", "interval_seconds": 600},
         ],
+        "hidden_cards": ["antigravity/other_models", "commandcode/credits", "gcp-billing/month_to_date_cost"],
         "runs": [
             {"provider": "antigravity", "status": "ok", "last_run": now(-timedelta(minutes=2)), "duration_ms": 420},
+            {"provider": "commandcode", "status": "ok", "last_run": now(-timedelta(minutes=1)), "duration_ms": 210},
+            {"provider": "opendesign", "status": "ok", "last_run": now(-timedelta(minutes=3)), "duration_ms": 380},
             {"provider": "colab", "status": "ok", "last_run": now(-timedelta(minutes=12)), "duration_ms": 610},
             {"provider": "google-flow", "status": "expired_auth", "last_run": now(-timedelta(minutes=20)), "error": "credential rejected: HTTP 401: session expired", "duration_ms": 300},
             {"provider": "gcp-billing", "status": "unconfigured", "last_run": now(-timedelta(hours=1)), "error": "not configured: gcp_billing_table is empty", "duration_ms": 2},
@@ -68,7 +73,7 @@ def fixture_overview() -> dict:
         ],
         "quotas": [
             {
-                "provider": "gemini-cli",
+                "provider": "antigravity",
                 "metric": "gemini_models",
                 "label": "Gemini models",
                 "remaining": 68,
@@ -82,7 +87,7 @@ def fixture_overview() -> dict:
                 ],
             },
             {
-                "provider": "claude",
+                "provider": "antigravity",
                 "metric": "claude_models",
                 "label": "Claude & GPT models",
                 "remaining": 12,
@@ -94,6 +99,20 @@ def fixture_overview() -> dict:
                     {"label": "5-hour", "remaining": 12, "total": 100, "unit": "%", "reset_at": now(timedelta(minutes=48))},
                 ],
             },
+            {"provider": "commandcode", "metric": "plan", "label": "Plan", "remaining": 61, "total": 100, "unit": "%", "status": "ok",
+             "account": "abcdlsj", "updated_at": now(-timedelta(minutes=1)),
+             "series": [
+                 {"label": "5-hour", "remaining": 96.8, "total": 100, "unit": "%", "reset_at": now(timedelta(hours=1, minutes=40))},
+                 {"label": "Weekly", "remaining": 61, "total": 100, "unit": "%", "reset_at": now(timedelta(hours=21))},
+             ]},
+            {"provider": "commandcode", "metric": "credits", "label": "Credits", "remaining": 120, "total": 0, "unit": "credits", "status": "ok", "updated_at": now(-timedelta(minutes=1))},
+            {"provider": "opendesign", "metric": "plan", "label": "Design Plan", "remaining": 83.8, "total": 100, "unit": "%", "status": "ok",
+             "account": "lisongjianshuai@gmail.com", "updated_at": now(-timedelta(minutes=3)),
+             "series": [
+                 {"label": "5-hour", "remaining": 100, "total": 100, "unit": "%", "reset_at": now(timedelta(hours=2))},
+                 {"label": "Weekly", "remaining": 83.8, "total": 100, "unit": "%", "reset_at": now(timedelta(hours=23))},
+             ]},
+            {"provider": "opendesign", "metric": "balance", "label": "Balance", "remaining": 0.99, "total": 0, "unit": "USD", "status": "ok", "updated_at": now(-timedelta(minutes=3))},
             {"provider": "colab", "metric": "compute_units", "label": "Compute units", "remaining": 21.5, "total": 100, "unit": "units", "status": "ok", "reset_at": now(timedelta(days=9)), "updated_at": now(-timedelta(minutes=2))},
             {"provider": "google-flow", "metric": "flow_credits", "label": "Flow credits", "remaining": 750, "total": 1000, "unit": "credits", "status": "ok", "reset_at": now(timedelta(days=21)), "updated_at": now(-timedelta(minutes=3))},
             {"provider": "gcp-billing", "metric": "month_to_date_cost", "label": "Month to date", "remaining": 12.4, "total": 0, "unit": "USD", "status": "ok", "updated_at": now(-timedelta(minutes=5))},
@@ -121,6 +140,16 @@ def fixture_settings() -> dict:
              "fields": [
                  field("antigravity_refresh_token", "Refresh token", "secret", "••••x9Qa", optional=True, help="Minted by Sign in with Google."),
                  interval("antigravity", "Refresh every", 5, 5),
+             ]},
+            {"id": "commandcode", "title": "Command Code", "providers": ["commandcode"], "summary": "5-hour and weekly plan windows.",
+             "fields": [
+                 field("commandcode_api_key", "API key", "secret", optional=True, help="Leave empty to use the Command Code CLI sign-in (~/.commandcode/auth.json)."),
+                 interval("commandcode", "Refresh every", 5, 2),
+             ]},
+            {"id": "opendesign", "title": "Open Design", "providers": ["opendesign"], "summary": "Design Plan windows and USD balance.",
+             "fields": [
+                 field("opendesign_control_key", "Control key", "secret", optional=True, help="Leave empty to use the Open Design CLI sign-in (~/.amr/config.json)."),
+                 interval("opendesign", "Refresh every", 5, 2),
              ]},
             {"id": "colab", "title": "Colab", "providers": ["colab"], "summary": "Compute-unit balance.",
              "fields": [
@@ -375,6 +404,9 @@ def main() -> None:
         shot(f"{base}/popover.html?settings=general&theme=light", OUT / "popover-settings-general-light.png", 372, 600)
         shot(f"{base}/settings.html?theme=light#general", OUT / "web-settings-general.png", 1100, 700, 1)
         shot(f"{base}/settings.html?theme=light#gcp", OUT / "web-settings.png", 1100, 900, 1)
+        shot(f"{base}/popover.html?settings=commandcode&theme=light", OUT / "popover-settings-source.png", 372, 700)
+        shot(f"{base}/index.html?theme=light#/overview", OUT / "web-overview.png", 1100, 1300, 1)
+        shot(f"{base}/index.html?theme=dark#/source/commandcode", OUT / "web-source.png", 1100, 700, 1)
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 900, 536)
         httpd.shutdown()
@@ -388,6 +420,9 @@ def main() -> None:
         "popover-settings-general-light.png",
         "web-settings-general.png",
         "web-settings.png",
+        "popover-settings-source.png",
+        "web-overview.png",
+        "web-source.png",
         "app-icon.png",
         "tray-icon-readability.png",
     ):

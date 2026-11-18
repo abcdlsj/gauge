@@ -260,63 +260,15 @@ body {
 
 @keyframes pulse { 50% { opacity: 0.3; } }
 
-/* ---------- floating jump rail ---------- */
+/* ---------- source tab ---------- */
 
-.rail {
-  position: fixed;
-  left: 32px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 15;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.05), 0 12px 30px -22px rgba(20, 22, 26, 0.5);
-}
-.rail[hidden] { display: none; }
-.rail a {
-  position: relative;
-  display: flex;
-  align-items: center;
-  padding: 6px;
-  border-radius: 999px;
-  text-decoration: none;
-}
-.rail-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--line-strong);
-  flex: none;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-.rail a:hover .rail-dot { background: var(--muted); transform: scale(1.2); }
-.rail a[data-active] .rail-dot { background: var(--accent); transform: scale(1.45); }
-.rail-label {
-  position: absolute;
-  left: 26px;
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  padding: 4px 9px;
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 14px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  box-shadow: 0 1px 2px rgba(20, 22, 26, 0.06), 0 10px 24px -18px rgba(20, 22, 26, 0.5);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-}
-.rail a:hover .rail-label { opacity: 1; transform: translateY(-50%) translateX(0); }
-
-@media (max-width: 1200px) {
-  .rail { display: none; }
-}
+.nav { flex-wrap: wrap; }
+.group-head h2 a { color: inherit; text-decoration: none; }
+.group-head h2 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.source-head { flex-wrap: wrap; gap: 6px 14px; }
+.source-head .hint { font-size: 14px; }
+.source-actions { margin-left: auto; display: flex; gap: 8px; }
+.source-actions .btn { text-decoration: none; }
 
 /* ---------- quota groups ---------- */
 

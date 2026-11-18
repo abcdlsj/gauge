@@ -126,38 +126,15 @@ function meter(pct, tone) {
   return `<div class="meter" data-tone="${esc(tone)}" role="img" aria-label="${pct.toFixed(0)}% remaining">${html}</div>`;
 }
 
-function renderAccount(accounts) {
-  const a = (accounts || [])[0];
-  const root = $('#account');
-  if (!a) {
-    root.innerHTML = '<span class="avatar avatar-skeleton"></span><span class="who"><b>&nbsp;</b></span>';
-    return;
-  }
-  const tier = a.tier || '';
-  const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
-  const planClass = /ultra/i.test(tier) ? '' : /pro/i.test(tier) ? 'pro' : 'free';
-  const label = /ultra/i.test(tier) ? 'Google AI Ultra' : /pro/i.test(tier) ? 'Google AI Pro' : tier;
-  root.innerHTML = `
-    <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
-    <span class="who"><b>${esc(a.name || a.email || '')}</b><span>${esc(a.email || '')}</span></span>
-    <span class="plan ${planClass}">${esc(label || '—')}</span>`;
-}
+// Sources stack top to bottom in this order; anything else follows.
+const SOURCE_ORDER = ['antigravity', 'commandcode', 'opendesign', 'colab', 'google-flow', 'gcp-monitoring', 'gcp-billing'];
 
-function renderWindow(series) {
-  const unit = series.unit || '%';
-  const pct = series.total > 0 ? Math.max(0, Math.min(100, (series.remaining / series.total) * 100)) : 0;
-  const tone = unit === '%' ? toneFor(pct) : 'ok';
-  const reset = series.reset_at ? `<b data-in="${series.reset_at}"></b>` : 'no reset';
-  return `
-    <div class="win">
-      <div class="win-top">
-        <span class="win-name">${esc(series.label || 'current')}</span>
-        <span class="win-left">Left</span>
-        <span class="win-pct ${tone === 'ok' ? '' : tone}">${fmtNumber(series.remaining, unit)}<i>${unit === '%' ? '%' : esc(unit)}</i></span>
-      </div>
-      ${meter(pct, tone)}
-      <div class="win-reset"><span class="clock">◷</span>${reset}</div>
-    </div>`;
+// tint is the meter colour of a card: the model family for Antigravity, the
+// source for everything else.
+function tintFor(sn) {
+  if (sn.metric === 'claude_models') return 'claude';
+  if (sn.provider === 'commandcode' || sn.provider === 'opendesign') return sn.provider;
+  return 'gemini';
 }
 
 const familyIcons = {
@@ -167,71 +144,105 @@ const familyIcons = {
   claude: '<svg viewBox="0 0 16 16" aria-hidden="true"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 1.5v13M2.4 4.75l11.2 6.5M13.6 4.75l-11.2 6.5"/></g></svg>',
 };
 
-function renderFamilies(quotas) {
-  const order = [
-    { metric: 'gemini_models', family: 'gemini', name: 'Gemini models' },
-    { metric: 'claude_models', family: 'claude', name: 'Claude & GPT models' },
-  ];
-  return order.map(({ metric, family, name }) => {
-    const sn = quotas.find((q) => q.metric === metric);
-    if (!sn) return '';
-    const series = sn.series && sn.series.length
-      ? sn.series
-      : [{ label: 'current', remaining: sn.remaining, total: sn.total, unit: sn.unit, reset_at: sn.reset_at }];
+const shortNames = {
+  compute_units: 'Colab',
+  flow_credits: 'Flow credits',
+  gemini_cli_requests: 'CLI calls',
+  paid_api_requests_10m: 'API calls · 10m',
+  credits_remaining: 'Credits',
+  month_to_date_cost: 'Cost',
+};
+
+function renderAccountBadge(accounts) {
+  const a = (accounts || [])[0];
+  if (!a) return '';
+  const tier = a.tier || '';
+  const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
+  const label = kind === 'ultra' ? 'Google AI Ultra' : kind === 'pro' ? 'Google AI Pro' : tier;
+  return `
+    <span class="src-account" title="${esc(a.email || '')}">
+      <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
+      ${label ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(label)}</span>` : ''}
+    </span>`;
+}
+
+function renderWindow(series) {
+  const unit = series.unit || '%';
+  const pct = series.total > 0 ? Math.max(0, Math.min(100, (series.remaining / series.total) * 100)) : 0;
+  const tone = unit === '%' ? toneFor(pct) : 'ok';
+  const reset = series.reset_at ? `<b data-in="${series.reset_at}"></b>` : 'not started';
+  return `
+    <div class="win">
+      <div class="win-top">
+        <span class="win-name">${esc(series.label || 'current')}</span>
+        <span class="win-reset"><span class="clock">◷</span>${reset}</span>
+        <span class="win-pct ${tone === 'ok' ? '' : tone}">${fmtNumber(series.remaining, unit)}<i>${unit === '%' ? '% left' : esc(unit)}</i></span>
+      </div>
+      ${meter(pct, tone)}
+    </div>`;
+}
+
+// renderPool is one card with quota windows: Gemini models, a Command Code
+// plan. The family line is only drawn when a source has several pools.
+function renderPool(sn, labelled) {
+  const series = sn.series && sn.series.length
+    ? sn.series
+    : [{ label: 'current', remaining: sn.remaining, total: sn.total, unit: sn.unit, reset_at: sn.reset_at }];
+  const tint = tintFor(sn);
+  const head = labelled
+    ? `<div class="fam-head"><span class="fam-logo">${familyIcons[tint] || ''}</span><span class="fam-name">${esc(sn.label)}</span></div>`
+    : '';
+  return `<div class="fam" data-family="${esc(tint)}">${head}${series.map(renderWindow).join('')}</div>`;
+}
+
+function renderMini(sn) {
+  return `
+    <div class="mini">
+      <span class="label">${esc(shortNames[sn.metric] || sn.label)}</span>
+      <span class="spacer"></span>
+      <span class="note">${sn.reset_at ? `resets in <b data-in="${sn.reset_at}"></b>` : `<b data-ago="${sn.updated_at}"></b>`}</span>
+      <span class="value">${fmtNumber(sn.remaining, sn.unit)}<span>${esc(sn.unit || '')}</span></span>
+    </div>`;
+}
+
+// renderSources stacks every source that has a visible card. Pools (cards
+// with windows) come first inside a source, single numbers follow as rows.
+function renderSources(overview) {
+  const hidden = new Set(overview.hidden_cards || []);
+  const titles = new Map((overview.providers || []).map((p) => [p.name, p.title]));
+  const visible = (overview.quotas || []).filter((q) => q.kind !== 'note' && !hidden.has(`${q.provider}/${q.metric}`));
+  const names = [...new Set(visible.map((q) => q.provider))]
+    .sort((x, y) => (SOURCE_ORDER.indexOf(x) + 1 || 99) - (SOURCE_ORDER.indexOf(y) + 1 || 99));
+
+  return names.map((name) => {
+    const cards = visible.filter((q) => q.provider === name);
+    const pools = cards.filter((q) => q.series && q.series.length);
+    const minis = cards.filter((q) => !(q.series && q.series.length));
+    const account = name === 'antigravity'
+      ? renderAccountBadge(overview.accounts)
+      : cards[0].account ? `<span class="src-user">${esc(cards[0].account.split('@')[0])}</span>` : '';
+    const stale = cards.some((q) => q.status === 'error' || q.status === 'expired_auth');
     return `
-      <section class="fam" data-family="${family}">
-        <div class="fam-head">
-          <span class="fam-logo">${familyIcons[family] || ''}</span>
-          <span class="fam-name">${esc(name)}</span>
+      <section class="src" data-provider="${esc(name)}">
+        <div class="src-head">
+          <span class="src-name">${esc(titles.get(name) || name)}</span>
+          ${stale ? '<span class="src-stale" title="Last refresh failed; numbers may be old">stale</span>' : ''}
+          ${account}
         </div>
-        ${series.map(renderWindow).join('')}
+        ${pools.map((sn) => renderPool(sn, pools.length > 1)).join('')}
+        ${minis.map(renderMini).join('')}
       </section>`;
   }).join('');
 }
 
-function renderMinis(quotas, providers) {
-  const wanted = ['colab', 'google-flow', 'gcp-monitoring', 'gcp-billing'];
-  const titles = new Map((providers || []).map((p) => [p.name, p.title]));
-  const shortName = (sn) => ({
-    compute_units: 'Colab',
-    flow_credits: 'Flow credits',
-    gemini_cli_requests: 'CLI calls',
-    paid_api_requests_10m: 'API calls · 10m',
-    credits_remaining: 'Credits',
-    month_to_date_cost: 'Cost',
-  })[sn.metric] || (titles.get(name) || name);
-  const cards = [];
-
-  for (const name of wanted) {
-    const items = quotas.filter((q) => q.provider === name && q.kind !== 'note');
-    if (!items.length) {
-      continue;
-    }
-    for (const sn of items) {
-      cards.push(`
-        <div class="mini">
-          <span class="label">${esc(shortName(sn))}</span>
-          <span class="spacer"></span>
-          <span class="note">${sn.reset_at ? `resets in <b data-in="${sn.reset_at}"></b>` : `<b data-ago="${sn.updated_at}"></b>`}</span>
-          <span class="value">${fmtNumber(sn.remaining, sn.unit)}<span>${esc(sn.unit || '')}</span></span>
-        </div>`);
-    }
-  }
-  if (!cards.length) return '';
-  return `<div class="mini-list">${cards.join('')}</div>`;
-}
-
 function render(overview) {
   const quotas = overview.quotas || [];
-  renderAccount(overview.accounts);
-
-  const families = renderFamilies(quotas);
-  const minis = renderMinis(quotas, overview.providers);
   const root = $('#pop-body');
-
-  root.innerHTML = families
-    ? families + minis
-    : `<div class="mini notice">No snapshots yet — collectors are warming up.</div>`;
+  const sources = renderSources(overview);
+  root.innerHTML = sources
+    || (quotas.length
+      ? '<div class="mini notice">Every card is hidden. Turn some on in Settings.</div>'
+      : '<div class="mini notice">No snapshots yet — collectors are warming up.</div>');
 
   const times = quotas.map((q) => new Date(q.updated_at).getTime()).filter((n) => !Number.isNaN(n));
   const latest = times.length ? Math.max(...times) : null;
