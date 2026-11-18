@@ -8,7 +8,7 @@ units, Flow video credits.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/popover-dark.png">
-    <img src="docs/popover-light.png" width="372" alt="Gauge popover: account, Gemini and Claude pools, Colab units, Flow credits, cost">
+    <img src="docs/popover-light.png" width="372" alt="Gauge popover: Google AI Ultra plan, Antigravity Gemini and Claude pools, Flow credits, Colab units, Command Code and Open Design plans">
   </picture>
 </p>
 
