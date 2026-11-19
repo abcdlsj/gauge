@@ -147,10 +147,8 @@ function tintFor(sn) {
 }
 
 const familyIcons = {
-  // four-point sparkle
-  gemini: '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0l1.9 5.6L15.5 7.5 9.9 9.4 8 15l-1.9-5.6L.5 7.5l5.6-1.9Z"/></svg>',
-  // six-spoke asterisk
-  claude: '<svg viewBox="0 0 16 16" aria-hidden="true"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 1.5v13M2.4 4.75l11.2 6.5M13.6 4.75l-11.2 6.5"/></g></svg>',
+  gemini: GaugeIcons.svg('gemini', 13),
+  claude: GaugeIcons.svg('claude', 13),
 };
 
 const shortNames = {
@@ -270,22 +268,22 @@ const SETUP_META = {
   google: {
     tint: 'var(--gemini)',
     desc: 'Antigravity, Flow & Colab',
-    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 1.5l1.95 5.55L16.5 9l-5.55 1.95L9 16.5l-1.95-5.55L1.5 9l5.55-1.95Z"/></svg>',
+    icon: GaugeIcons.svg('google', 15),
   },
   commandcode: {
     tint: 'var(--commandcode)',
     desc: '5-hour & weekly plan windows',
-    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4.2 5.8 7.8 9l-3.6 3.2M9.2 12.2h4.4"/></svg>',
+    icon: GaugeIcons.svg('commandcode', 15),
   },
   opendesign: {
     tint: 'var(--opendesign)',
     desc: 'Design Plan & USD balance',
-    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round" d="M9 2.6 15.2 9 9 15.4 2.8 9Z"/><circle cx="9" cy="9" r="1.45" fill="currentColor"/></svg>',
+    icon: GaugeIcons.svg('opendesign', 15),
   },
   gcp: {
     tint: 'var(--gcp)',
     desc: 'BigQuery billing & Gemini API',
-    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.4 13.5h7.3a2.7 2.7 0 0 0 .4-5.37 4.1 4.1 0 0 0-7.9-1.15 3.1 3.1 0 0 0 .2 6.52Z"/></svg>',
+    icon: GaugeIcons.svg('gcp', 15),
   },
 };
 
