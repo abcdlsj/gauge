@@ -35,6 +35,7 @@ type Engine struct {
 	lastRun    map[string]time.Time
 	inFlight   map[string]bool
 	prevStatus map[string]string // provider -> last observed run status
+	failures   map[string]int    // provider -> consecutive non-unconfigured failures
 	started    time.Time
 }
 
@@ -48,6 +49,7 @@ func New(st *store.Store, deps *providers.Deps, list []providers.Provider, logge
 		lastRun:    make(map[string]time.Time),
 		inFlight:   make(map[string]bool),
 		prevStatus: make(map[string]string),
+		failures:   make(map[string]int),
 		started:    time.Now(),
 	}
 }
@@ -69,6 +71,7 @@ type Overview struct {
 	Events      []model.Event        `json:"events"`
 	Accounts    []model.Account      `json:"accounts"`
 	Settings    map[string]bool      `json:"settings"`
+	Sources     map[string]string    `json:"sources,omitempty"`
 	Cooldown    map[string]time.Time `json:"cooldown"`
 	// Layout is the subscription groups and their cards, in the user's
 	// order, with the visibility the menu bar and the overview apply.
@@ -143,11 +146,92 @@ func (e *Engine) loop(ctx context.Context, p providers.Provider) {
 		if ctx.Err() != nil {
 			return
 		}
-		if _, err := e.RunOnce(ctx, p.Name(), false); err != nil && !errors.Is(err, ErrCooldown) {
+		_, err := e.RunOnce(ctx, p.Name(), false)
+		if err != nil && !errors.Is(err, ErrCooldown) {
 			e.log.Printf("[%s] collect: %v", p.Name(), err)
 		}
 		interval := e.deps.IntervalOverride(ctx, p.Name(), p.Interval())
-		delay = interval + jitterFor(p.Name(), interval)
+		base := e.nextInterval(p.Name(), interval, err)
+		delay = base + jitterFor(p.Name(), base)
+	}
+}
+
+// nextInterval applies capped exponential backoff on repeated failures,
+// rate limits, and expired credentials so a broken source never hammers upstream.
+func (e *Engine) nextInterval(name string, base time.Duration, err error) time.Duration {
+	if err == nil || errors.Is(err, providers.ErrNotConfigured) || errors.Is(err, ErrCooldown) {
+		return base
+	}
+	e.mu.Lock()
+	fails := e.failures[name]
+	e.mu.Unlock()
+	return backoffDelay(base, fails, err)
+}
+
+func backoffDelay(base time.Duration, failures int, err error) time.Duration {
+	if err == nil || errors.Is(err, providers.ErrNotConfigured) || errors.Is(err, ErrCooldown) {
+		return base
+	}
+	if failures < 1 {
+		failures = 1
+	}
+	switch {
+	case errors.Is(err, providers.ErrExpiredAuth):
+		d := base * 6
+		if d < time.Hour {
+			d = time.Hour
+		}
+		if cap := max(base, 6*time.Hour); d > cap {
+			d = cap
+		}
+		return d
+	case errors.Is(err, providers.ErrRateLimited):
+		shift := min(failures, 3) // 2x, 4x, 8x
+		d := base << shift
+		if cap := max(base, 6*time.Hour); d > cap {
+			d = cap
+		}
+		return d
+	default:
+		shift := min(failures-1, 3) // 1x, 2x, 4x, 8x
+		d := base << shift
+		if cap := max(base, 2*time.Hour); d > cap {
+			d = cap
+		}
+		return d
+	}
+}
+
+// RefreshStale triggers a background collection for any active provider whose
+// last run is older than its configured interval (for example after macOS wakes
+// from sleep). Paused and unconfigured providers are skipped.
+func (e *Engine) RefreshStale() {
+	e.mu.Lock()
+	ctx := e.runCtx
+	e.mu.Unlock()
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+	now := time.Now()
+	for _, p := range e.providers {
+		name := p.Name()
+		interval := e.deps.IntervalOverride(ctx, name, p.Interval())
+
+		e.mu.Lock()
+		inFlight := e.inFlight[name]
+		status := e.prevStatus[name]
+		last, hasLast := e.lastRun[name]
+		e.mu.Unlock()
+
+		if inFlight || !hasLast {
+			continue
+		}
+		if status == model.StatusUnconfigured || status == model.StatusExpiredAuth {
+			continue
+		}
+		if now.Sub(last) >= interval {
+			go func(n string) { _, _ = e.RunOnce(ctx, n, false) }(name)
+		}
 	}
 }
 
@@ -208,7 +292,18 @@ func (e *Engine) RunOnce(ctx context.Context, name string, manual bool) (model.R
 	finished := time.Now()
 	runs.LastRun = &finished
 	runs.DurationMS = duration.Milliseconds()
-	next = finished.Add(e.deps.IntervalOverride(ctx, name, prov.Interval()))
+
+	e.mu.Lock()
+	if err == nil || errors.Is(err, providers.ErrNotConfigured) {
+		e.failures[name] = 0
+	} else {
+		e.failures[name]++
+	}
+	fails := e.failures[name]
+	e.mu.Unlock()
+
+	baseInterval := e.deps.IntervalOverride(ctx, name, prov.Interval())
+	next = finished.Add(backoffDelay(baseInterval, fails, err))
 	runs.NextRun = &next
 
 	if err != nil {
@@ -308,17 +403,19 @@ func (e *Engine) find(name string) (providers.Provider, bool) {
 	return nil, false
 }
 
-// ResetCooldown clears the manual-refresh guard, so saving credentials is
-// immediately followed by a usable Refresh button.
+// ResetCooldown clears the manual-refresh guard and any error backoff, so
+// saving credentials is immediately followed by a usable Refresh button.
 func (e *Engine) ResetCooldown(names ...string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(names) == 0 {
 		e.lastRun = make(map[string]time.Time)
+		e.failures = make(map[string]int)
 		return
 	}
 	for _, n := range names {
 		delete(e.lastRun, n)
+		delete(e.failures, n)
 	}
 }
 
@@ -399,6 +496,11 @@ func (e *Engine) Overview(ctx context.Context) (Overview, error) {
 		settings[k] = true
 	}
 
+	var sources map[string]string
+	if src, ok, err := e.store.Get(ctx, "antigravity_source"); err == nil && ok && src != "" {
+		sources = map[string]string{"antigravity": src}
+	}
+
 	return Overview{
 		GeneratedAt: time.Now(),
 		StartedAt:   e.started,
@@ -408,6 +510,7 @@ func (e *Engine) Overview(ctx context.Context) (Overview, error) {
 		Events:      events,
 		Accounts:    accounts,
 		Settings:    settings,
+		Sources:     sources,
 		Cooldown:    cooldown,
 		Layout:      e.Layout(ctx, quotas, accounts),
 	}, nil

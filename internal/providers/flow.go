@@ -82,6 +82,8 @@ func (GoogleFlow) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error
 		_ = d.Store.Set(ctx, "flow_auth_state", "expired")
 		_ = d.Store.Set(ctx, "flow_cookie_fp", shortFingerprint(cookie))
 		return nil, fmt.Errorf("%w: HTTP %d: %s", ErrExpiredAuth, resp.StatusCode, snippet(body))
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("%w: HTTP 429: %s", ErrRateLimited, snippet(body))
 	default:
 		return nil, fmt.Errorf("flow: HTTP %d: %s", resp.StatusCode, snippet(body))
 	}

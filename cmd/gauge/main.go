@@ -200,6 +200,10 @@ func main() {
 		popover.Hide()
 		e.Cancel()
 	})
+	// Refresh any provider whose interval elapsed while the Mac was asleep.
+	popover.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) {
+		a.Engine.RefreshStale()
+	})
 
 	tray = ui.SystemTray.New()
 	tray.SetTemplateIcon(trayIconFor(a.Icon(ctx)))

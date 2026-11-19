@@ -586,7 +586,10 @@
         const acc = resolveGoogleAccount('google');
         const chrome = fields.find((f) => f.key === 'browser_cookies');
         const tok = fields.find((f) => f.key === 'antigravity_refresh_token');
-        const p1 = (acc && acc.signedIn) || (tok && tok.configured) ? 'OAuth ready' : 'OAuth unset';
+        const src = overview && overview.sources && overview.sources.antigravity;
+        const p1 = src === 'local_ide'
+          ? 'Local IDE'
+          : ((acc && acc.signedIn) || (tok && tok.configured) ? 'OAuth ready' : 'OAuth unset');
         const p2 = chrome && chrome.value === 'chrome' ? 'Chrome cookies' : 'Manual cookies';
         return `${p1} · ${p2}`;
       }

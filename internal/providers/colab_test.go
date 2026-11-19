@@ -1,9 +1,14 @@
 package providers
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -48,5 +53,74 @@ func TestSapisidAuth(t *testing.T) {
 func TestSapisidAuthRequiresCookie(t *testing.T) {
 	if _, err := sapisidAuth("SID=abc", colabOrigin); err == nil {
 		t.Fatal("expected an error without SAPISID")
+	}
+}
+
+func TestColabPausesOnExpiredAuth(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+
+	var hits atomic.Int32
+	var status atomic.Int32
+	status.Store(http.StatusUnauthorized)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		code := int(status.Load())
+		if code != http.StatusOK {
+			http.Error(w, "nope", code)
+			return
+		}
+		_, _ = w.Write([]byte(userInfoFixture))
+	}))
+	defer srv.Close()
+
+	_ = d.Store.Set(ctx, "browser_cookies", "off")
+	_ = d.Store.Set(ctx, "colab_endpoint", srv.URL)
+	_ = d.Store.Set(ctx, "colab_cookie", "SID=abc; SAPISID=old")
+
+	// First call hits the server and trips the expired pause.
+	if _, err := (Colab{}).Collect(ctx, d); !errors.Is(err, ErrExpiredAuth) {
+		t.Fatalf("first error = %v, want ErrExpiredAuth", err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("hits = %d, want 1", hits.Load())
+	}
+
+	// Second call with the same cookie must pause without making any HTTP request.
+	if _, err := (Colab{}).Collect(ctx, d); !errors.Is(err, ErrExpiredAuth) {
+		t.Fatalf("second error = %v, want ErrExpiredAuth", err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("hits after paused call = %d, want 1", hits.Load())
+	}
+
+	// Updating the cookie clears the pause and succeeds.
+	status.Store(http.StatusOK)
+	_ = d.Store.Set(ctx, "colab_cookie", "SID=abc; SAPISID=fresh")
+	snaps, err := (Colab{}).Collect(ctx, d)
+	if err != nil {
+		t.Fatalf("recovery failed: %v", err)
+	}
+	if len(snaps) == 0 || hits.Load() != 2 {
+		t.Fatalf("snaps=%d hits=%d, want >0 and 2", len(snaps), hits.Load())
+	}
+}
+
+func TestColabRateLimited(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "slow down", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_ = d.Store.Set(ctx, "browser_cookies", "off")
+	_ = d.Store.Set(ctx, "colab_endpoint", srv.URL)
+	_ = d.Store.Set(ctx, "colab_cookie", "SID=abc; SAPISID=secret")
+
+	if _, err := (Colab{}).Collect(ctx, d); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
 	}
 }

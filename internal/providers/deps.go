@@ -25,6 +25,7 @@ import (
 var (
 	ErrNotConfigured = errors.New("not configured")
 	ErrExpiredAuth   = errors.New("credential rejected")
+	ErrRateLimited   = errors.New("rate limited")
 )
 
 // Provider is one upstream quota source.

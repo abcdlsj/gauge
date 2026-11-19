@@ -145,56 +145,9 @@ func fetchLocalStatus(ctx context.Context, d *Deps, hub hubDiscovery) (userStatu
 		"extensionName": "antigravity",
 		"locale":        "en",
 	}}
-	payload, _ := json.Marshal(body)
-
-	// Plain HTTP first; the IDE also exposes TLS with a self-signed cert.
-	for _, attempt := range []struct {
-		port   int
-		client *http.Client
-	}{
-		{hub.HTTPPort, d.Client},
-		{hub.HTTPSPort, insecureClient()},
-	} {
-		if attempt.port <= 0 {
-			continue
-		}
-		status, err := callUserStatus(ctx, attempt.client, attempt.port, hub.CSRFToken, payload)
-		if err == nil {
-			return status, nil
-		}
-		if ctx.Err() != nil {
-			return out, ctx.Err()
-		}
-	}
-
-	return out, fmt.Errorf("language server on pid %d did not answer", hub.PID)
-}
-
-func callUserStatus(ctx context.Context, client *http.Client, port int, csrf string, body []byte) (userStatus, error) {
-	var out userStatus
-	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, languageServerRPC)
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
+	raw, err := callLanguageServer(ctx, d, hub, languageServerRPC, body)
 	if err != nil {
 		return out, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Connect-Protocol-Version", "1")
-	req.Header.Set("X-Codeium-Csrf-Token", csrf)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return out, err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return out, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return out, fmt.Errorf("HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
 	var envelope struct {
 		UserStatus userStatus `json:"userStatus"`
@@ -247,19 +200,17 @@ func discoverHub() (hubDiscovery, error) {
 			return hub, nil
 		}
 	}
-	return candidates[0], nil
+	return hubDiscovery{}, fmt.Errorf("no running IDE process found")
 }
 
-// insecureClient accepts the language server's self-signed certificate. It only
-// ever talks to 127.0.0.1.
-func insecureClient() *http.Client {
-	return &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			Proxy:           nil,
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
-	}
+// localTLSClient accepts the language server's self-signed certificate. It only
+// ever talks to 127.0.0.1 and is reused across calls to avoid leaking transports.
+var localTLSClient = &http.Client{
+	Timeout: 5 * time.Second,
+	Transport: &http.Transport{
+		Proxy:           nil,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	},
 }
 
 // fetchLocalPools asks the IDE for the grouped quota summary. This is the only
@@ -317,18 +268,20 @@ func callLanguageServer(ctx context.Context, d *Deps, hub hubDiscovery, path str
 		return nil, err
 	}
 
+	// Plain HTTP first; the IDE also exposes TLS with a self-signed cert.
 	for _, attempt := range []struct {
+		scheme string
 		port   int
 		client *http.Client
 	}{
-		{hub.HTTPPort, d.Client},
-		{hub.HTTPSPort, insecureClient()},
+		{"http", hub.HTTPPort, d.Client},
+		{"https", hub.HTTPSPort, localTLSClient},
 	} {
 		if attempt.port <= 0 {
 			continue
 		}
 		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		url := fmt.Sprintf("http://127.0.0.1:%d%s", attempt.port, path)
+		url := fmt.Sprintf("%s://127.0.0.1:%d%s", attempt.scheme, attempt.port, path)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			cancel()
@@ -341,6 +294,9 @@ func callLanguageServer(ctx context.Context, d *Deps, hub hubDiscovery, path str
 		resp, err := attempt.client.Do(req)
 		if err != nil {
 			cancel()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			continue
 		}
 		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))

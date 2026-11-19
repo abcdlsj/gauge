@@ -82,43 +82,52 @@ type loadCodeAssistResponse struct {
 	AllowedTiers []antigravityTier `json:"allowedTiers"`
 }
 
-// Collect prefers the running IDE: its language server reports credits and the
-// plan without any OAuth round trip. The Cloud Code API is layered on top for
-// per-model quota, and is allowed to fail on its own.
+// Collect prefers the running IDE: when its language server already reports the
+// grouped quota pools over loopback, the primary account skips the Cloud Code
+// API completely. Only when the IDE is closed (or returns no pools) does it
+// fall back to the Cloud Code API.
 func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
 	local, labels, credits, localPools, primary := collectLocal(ctx, d)
-	models, remotePools, info, err := collectRemote(ctx, d, labels, SourceAntigravity)
-	if err != nil {
-		d.Log.Printf("antigravity: remote quota unavailable: %v", err)
-		if len(local) > 0 || len(credits) > 0 || len(localPools) > 0 {
-			// The IDE still knows both pool windows even when the API cannot be
-			// reached, so keep the family cards instead of dropping to credits.
-			if len(localPools) > 0 {
-				local = append(local, mergeFamilies(nil, localPools, credits)...)
-			} else if card, ok := otherCard(credits, nil); ok {
-				local = append(local, card)
+
+	var result []model.Snapshot
+	if len(localPools) > 0 {
+		if primary.TierID != "" {
+			_ = d.Store.Set(ctx, "antigravity_tier", primary.TierID)
+		}
+		_ = d.Store.Set(ctx, "antigravity_source", "local_ide")
+		result = append(local, mergeFamilies(nil, localPools, credits)...)
+	} else {
+		models, remotePools, info, err := collectRemote(ctx, d, labels, SourceAntigravity)
+		if err != nil {
+			d.Log.Printf("antigravity: remote quota unavailable: %v", err)
+			if len(local) > 0 || len(credits) > 0 {
+				if card, ok := otherCard(credits, nil); ok {
+					local = append(local, card)
+				}
+				extra, extraAccounts := collectExtraAccounts(ctx, d)
+				local = append(local, extra...)
+				d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
+				_ = d.Store.Set(ctx, "antigravity_source", "local_ide")
+				return local, nil
 			}
 			// Extra accounts do not depend on the primary one: a 403 on slot 1
 			// must not hide the quota of an account that still answers.
 			extra, extraAccounts := collectExtraAccounts(ctx, d)
-			local = append(local, extra...)
-			d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
-			return local, nil
+			if len(extra) > 0 {
+				d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
+				_ = d.Store.Set(ctx, "antigravity_source", "cloud_api")
+				return extra, nil
+			}
+			return nil, err
 		}
-		return nil, err
+		if primary.Email == "" {
+			// The IDE is closed; the API still tells us the plan.
+			primary.Tier = firstNonEmpty(tierLabel(tierName(info)), primary.Tier)
+			primary.TierID = tierName(info)
+		}
+		_ = d.Store.Set(ctx, "antigravity_source", "cloud_api")
+		result = append(local, mergeFamilies(models, remotePools, credits)...)
 	}
-	if primary.Email == "" {
-		// The IDE is closed; the API still tells us the plan.
-		primary.Tier = firstNonEmpty(tierLabel(tierName(info)), primary.Tier)
-		primary.TierID = tierName(info)
-	}
-	// The IDE knows both windows; the REST API only reports the third-party
-	// group, so its pools are a fallback for when the IDE is closed.
-	pools := localPools
-	if len(pools) == 0 {
-		pools = remotePools
-	}
-	result := append(local, mergeFamilies(models, pools, credits)...)
 
 	// Extra accounts come from the OAuth flow; they only have the remote API.
 	extra, extraAccounts := collectExtraAccounts(ctx, d)
@@ -488,6 +497,8 @@ func postCloudCode(ctx context.Context, d *Deps, auth *Auth, path string, payloa
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 			d.FlushTokens()
 			return nil, fmt.Errorf("%w: HTTP %d: %s", ErrExpiredAuth, resp.StatusCode, snippet(raw))
+		case resp.StatusCode == http.StatusTooManyRequests:
+			return nil, fmt.Errorf("%w: HTTP 429 on %s: %s", ErrRateLimited, host, snippet(raw))
 		case resp.StatusCode == http.StatusNotFound:
 			// Endpoint absent on this host; try the next one.
 			lastErr = fmt.Errorf("HTTP 404 on %s%s", host, path)

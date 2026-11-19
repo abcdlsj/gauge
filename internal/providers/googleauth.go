@@ -388,6 +388,9 @@ func doJSON(client *http.Client, req *http.Request, out any) error {
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("%w: HTTP %d: %s", ErrExpiredAuth, resp.StatusCode, snippet(body))
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return fmt.Errorf("%w: HTTP 429: %s", ErrRateLimited, snippet(body))
+	}
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, snippet(body))
 	}

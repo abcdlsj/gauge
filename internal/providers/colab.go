@@ -47,6 +47,14 @@ func (Colab) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
 		return nil, fmt.Errorf("%w: no cookie; enable browser cookies or paste colab_cookie", ErrNotConfigured)
 	}
 
+	// A rejected session pauses polling until a new cookie appears.
+	if d.Setting(ctx, "colab_auth_state") == "expired" {
+		if d.Setting(ctx, "colab_cookie_fp") == shortFingerprint(cookie) {
+			return nil, fmt.Errorf("%w: session paused, update the cookie", ErrExpiredAuth)
+		}
+		_ = d.Store.Delete(ctx, "colab_auth_state")
+	}
+
 	auth, err := sapisidAuth(cookie, colabOrigin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrExpiredAuth, err)
@@ -76,11 +84,15 @@ func (Colab) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		_ = d.Store.Set(ctx, "colab_auth_state", "expired")
-		return colabExpiredSnapshots(time.Now().UTC()), nil
-	}
-	if resp.StatusCode != http.StatusOK {
+		_ = d.Store.Set(ctx, "colab_cookie_fp", shortFingerprint(cookie))
+		return nil, fmt.Errorf("%w: HTTP %d: %s", ErrExpiredAuth, resp.StatusCode, snippet(body))
+	case http.StatusTooManyRequests:
+		return nil, fmt.Errorf("%w: HTTP 429: %s", ErrRateLimited, snippet(body))
+	default:
 		return nil, fmt.Errorf("colab: HTTP %d: %s", resp.StatusCode, snippet(body))
 	}
 
@@ -191,17 +203,4 @@ var googleCookieNames = []string{
 	"__Secure-1PSID", "__Secure-3PSID", "__Secure-1PAPISID", "__Secure-3PAPISID",
 	"__Secure-1PSIDTS", "__Secure-3PSIDTS", "LSID", "OSID", "__Secure-OSID",
 	"SIDCC", "__Secure-1PSIDCC", "__Secure-3PSIDCC",
-}
-
-// colabExpiredSnapshots renders the paused state in the UI.
-func colabExpiredSnapshots(now time.Time) []model.Snapshot {
-	return []model.Snapshot{
-		{
-			Provider:  "colab",
-			Metric:    "auth",
-			Label:     "Colab session rejected",
-			Status:    model.StatusExpiredAuth,
-			UpdatedAt: now,
-		},
-	}
 }
