@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/abcdlsj/gauge/internal/app"
 
@@ -69,6 +70,9 @@ func main() {
 	if err != nil {
 		logger.Fatalf("start: %v", err)
 	}
+	snaps, _ := a.Store.Snapshots(ctx)
+	keys, _ := a.Store.Keys(ctx)
+	freshInstall := len(snaps) == 0 && len(keys) == 0
 	a.Engine.Start(ctx)
 
 	// The page reports the height of its painted panel; the shell resizes the
@@ -199,6 +203,18 @@ func main() {
 		ui.Quit()
 	})
 	tray.SetMenu(menu)
+
+	// On a fresh install (no snapshots or saved settings yet), open the popover
+	// once the menu bar icon is ready so the user sees where Gauge lives instead
+	// of wondering whether launching the app did anything.
+	if freshInstall {
+		ui.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+			go func() {
+				time.Sleep(350 * time.Millisecond)
+				tray.ShowWindow()
+			}()
+		})
+	}
 
 	ui.OnShutdown(func() {
 		_ = oauthSrv.Close()

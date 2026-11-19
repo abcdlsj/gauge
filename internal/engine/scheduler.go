@@ -31,6 +31,7 @@ type Engine struct {
 	log       *log.Logger
 
 	mu         sync.Mutex
+	runCtx     context.Context
 	lastRun    map[string]time.Time
 	inFlight   map[string]bool
 	prevStatus map[string]string // provider -> last observed run status
@@ -77,9 +78,40 @@ type Overview struct {
 // Start launches one goroutine per provider. Each loop collects immediately,
 // then sleeps for its interval plus a small jitter.
 func (e *Engine) Start(ctx context.Context) {
+	e.mu.Lock()
+	e.runCtx = ctx
+	e.mu.Unlock()
 	e.hydrate(ctx)
 	for _, p := range e.providers {
 		go e.loop(ctx, p)
+	}
+}
+
+// Trigger schedules an immediate background collection for the named providers
+// (or all providers when names is empty). It is a no-op before Start is called,
+// which keeps offline HTTP tests from hitting upstream networks.
+func (e *Engine) Trigger(names ...string) {
+	e.mu.Lock()
+	ctx := e.runCtx
+	e.mu.Unlock()
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+	if len(names) == 0 {
+		for _, p := range e.providers {
+			name := p.Name()
+			go func() { _, _ = e.RunOnce(ctx, name, false) }()
+		}
+		return
+	}
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		n := name
+		go func() { _, _ = e.RunOnce(ctx, n, false) }()
 	}
 }
 

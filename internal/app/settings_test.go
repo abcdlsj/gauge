@@ -270,3 +270,54 @@ func TestDisplayLayout(t *testing.T) {
 		}
 	}
 }
+
+func TestProvidersToRefresh(t *testing.T) {
+	cases := []struct {
+		name    string
+		changed map[string]string
+		wantAll bool
+		want    []string
+	}{
+		{
+			name:    "proxy refreshes all",
+			changed: map[string]string{"proxy_url": "http://127.0.0.1:7890"},
+			wantAll: true,
+		},
+		{
+			name:    "commandcode extra slot",
+			changed: map[string]string{"commandcode_api_key_2": "user_xxx"},
+			want:    []string{"commandcode"},
+		},
+		{
+			name:    "opendesign primary",
+			changed: map[string]string{"opendesign_control_key": "ck_xxx"},
+			want:    []string{"opendesign"},
+		},
+		{
+			name:    "browser cookies switch",
+			changed: map[string]string{"browser_cookies": "off"},
+			want:    []string{"google-flow", "colab"},
+		},
+		{
+			name:    "gcp project",
+			changed: map[string]string{"gcp_project_id": "my-proj"},
+			want:    []string{"gcp-billing", "gcp-monitoring"},
+		},
+		{
+			name:    "non-credential preferences",
+			changed: map[string]string{"app_icon": "classic", "webhook_url": "https://example.com", "refresh_colab_minutes": "45"},
+			want:    nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, all := providersToRefresh(tc.changed)
+			if all != tc.wantAll {
+				t.Fatalf("all = %v, want %v", all, tc.wantAll)
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("targets = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

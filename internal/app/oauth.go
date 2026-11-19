@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -86,7 +87,7 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	// back is where the browser lands once the code is exchanged. The desktop
 	// shell has no page behind the popover, so it asks for a plain result page.
-	back := "/#settings"
+	back := "/settings.html#google"
 	if r.URL.Query().Get("back") == "none" {
 		back = ""
 	}
@@ -109,24 +110,44 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// fallbackBack returns where an error page without a pending state should go:
+// the desktop loopback server only serves /oauth-callback, so bouncing there
+// would land on a 404.
+func fallbackBack(r *http.Request) string {
+	if r.URL.Path == "/oauth-callback" {
+		return ""
+	}
+	return "/settings.html#google"
+}
+
 // handleCallback exchanges the authorization code and stores the refresh token.
 func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	if errParam := query.Get("error"); errParam != "" {
-		renderCallback(w, false, "Authorization failed: "+errParam, "/#settings")
-		return
-	}
-
 	state := query.Get("state")
-	code := query.Get("code")
 
 	b.mu.Lock()
 	p, ok := b.pending[state]
 	delete(b.pending, state)
 	b.mu.Unlock()
 
+	back := fallbackBack(r)
+	if ok {
+		back = p.back
+	}
+
+	if errParam := query.Get("error"); errParam != "" {
+		msg := "Authorization failed: " + errParam
+		if errParam == "access_denied" {
+			msg = "Sign-in was cancelled. You can close this tab and try again from Gauge."
+		}
+		renderCallback(w, false, msg, back)
+		return
+	}
+
+	code := query.Get("code")
+
 	if !ok || time.Now().After(p.expires) {
-		renderCallback(w, false, "This sign-in link expired. Start again from the panel.", "/#settings")
+		renderCallback(w, false, "This sign-in link expired. Start again from Gauge.", back)
 		return
 	}
 	if code == "" {
@@ -164,7 +185,11 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// it runs the account cache still lists only the old identities.
 	go b.engine.RunOnce(context.Background(), "antigravity", true)
 	b.log.Println("oauth: Antigravity account connected")
-	renderCallback(w, true, "Account connected. The panel refreshes within a few seconds.", p.back)
+	doneMsg := "Account connected. Returning to Gauge…"
+	if p.back == "" {
+		doneMsg = "Account connected. You can close this tab and return to Gauge in the menu bar."
+	}
+	renderCallback(w, true, doneMsg, p.back)
 }
 
 // exchange trades the authorization code for a refresh token.
@@ -300,5 +325,5 @@ p{margin:0;color:#71767e;font-size:13px}
 @media (prefers-color-scheme:dark){body{background:#0b0c0e;color:#e9eaec}.card{background:#131519}
 p{color:#8c919a}}
 </style></head><body><div class="card"><h1>%s</h1><p>%s</p></div></body></html>`,
-		title, refresh, color, title, message)
+		title, refresh, color, title, html.EscapeString(message))
 }

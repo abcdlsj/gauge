@@ -497,6 +497,42 @@ func (a *Server) afterSettingsChange(ctx context.Context, changed map[string]str
 	if _, ok := changed[providers.ProxySetting]; ok && a.proxy != nil {
 		a.proxy.Invalidate()
 	}
+	// Trigger an immediate collection for any provider whose credentials or
+	// network route changed, so a user setting up a new source sees data right
+	// away instead of waiting for the next polling tick.
+	if targets, all := providersToRefresh(changed); all {
+		a.engine.Trigger()
+	} else if len(targets) > 0 {
+		a.engine.Trigger(targets...)
+	}
+}
+
+// providersToRefresh maps changed setting keys to the collectors that should
+// re-run immediately. Non-credential preferences (icon, webhook, intervals)
+// return nothing.
+func providersToRefresh(changed map[string]string) (targets []string, all bool) {
+	for key := range changed {
+		switch {
+		case key == providers.ProxySetting:
+			return nil, true
+		case key == "antigravity_refresh_token" || strings.HasPrefix(key, "antigravity_refresh_token_"):
+			targets = append(targets, "antigravity")
+		case key == "flow_cookie":
+			targets = append(targets, "google-flow")
+		case key == "colab_cookie":
+			targets = append(targets, "colab")
+		case key == "browser_cookies":
+			targets = append(targets, "google-flow", "colab")
+		case key == "commandcode_api_key" || strings.HasPrefix(key, "commandcode_api_key_"):
+			targets = append(targets, "commandcode")
+		case key == "opendesign_control_key" || strings.HasPrefix(key, "opendesign_control_key_"):
+			targets = append(targets, "opendesign")
+		case key == "gcp_project_id" || key == "gcp_billing_table" || key == "gcp_initial_credits" ||
+			key == "gcp_currency" || key == "google_refresh_token" || key == "gcp_sa_json":
+			targets = append(targets, "gcp-billing", "gcp-monitoring")
+		}
+	}
+	return targets, false
 }
 
 // handleRefresh collects a single provider on demand.
