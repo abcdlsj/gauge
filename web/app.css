@@ -239,20 +239,6 @@ body {
 .dot.running { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 
-/* Monochrome vendor marks that ship as a raster mask (see icons.js): the badge
-   tint paints them, so they match the inline SVGs next to them. */
-.gx-mask {
-  display: block;
-  flex: none;
-  background-color: currentColor;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-size: contain;
-  mask-size: contain;
-}
-
 .g-badge {
   flex: none;
   display: grid;
