@@ -305,6 +305,44 @@ TRAY_PREVIEW = """<!DOCTYPE html>
 """
 
 
+# api_fixture is what the pages would GET from the server. The harness also
+# answers those paths over HTTP, but a fetch that lands after Chrome's virtual
+# time budget expires yields a screenshot of a half-rendered page, so the
+# fixture is injected into the HTML as a fetch shim instead: every GET resolves
+# in a microtask, before the first paint.
+def api_fixture() -> dict:
+    return {
+        "/api/overview": fixture_overview(),
+        "/api/settings": fixture_settings(),
+        "/api/update": fixture_update(),
+    }
+
+
+FETCH_SHIM = """<script>
+(function () {
+  var fixture = %s;
+  var real = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var method = ((init && init.method) || 'GET').toUpperCase();
+    if (method !== 'GET') return real(input, init);
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    var path = url;
+    if (/^https?:/.test(url)) path = new URL(url).pathname;
+    else path = path.split('?')[0];
+    if (!Object.prototype.hasOwnProperty.call(fixture, path)) return real(input, init);
+    return Promise.resolve(new Response(JSON.stringify(fixture[path]), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    }));
+  };
+})();
+</script>"""
+
+
+def inject_fixture(html: str) -> str:
+    shim = FETCH_SHIM % json.dumps(api_fixture())
+    return html.replace("<head>", "<head>\n" + shim, 1)
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
@@ -328,6 +366,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
         match path:
+            case "/popover.html" | "/settings.html" | "/index.html":
+                self._send(inject_fixture((WEB / path.lstrip("/")).read_text()).encode(),
+                           "text/html; charset=utf-8")
             case "/api/overview":
                 self._send_json(fixture_overview())
             case "/api/settings":
