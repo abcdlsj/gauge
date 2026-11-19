@@ -165,17 +165,17 @@ def fixture_settings() -> dict:
 
     def interval(provider, label, default, floor, value=None):
         return field(f"refresh_{provider}_minutes", label, "number", value, unit="min",
-                     default=str(default), min=floor, help=f"Minimum {floor} minutes.")
+                     default=str(default), min=floor, help=f"Minimum {floor} min.")
 
     return {
         "sections": [
             {"id": "google", "title": "Google AI", "providers": ["antigravity", "google-flow", "colab"],
              "summary": "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
              "fields": [
-                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Only needed when the IDE is closed. Minted by Sign in with Google."),
+                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Only when the IDE is closed."),
                  field("browser_cookies", "Read cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Flow and Colab reuse the Chrome sign-in. One keychain prompt."),
-                 field("flow_cookie", "Flow cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
-                 field("colab_cookie", "Colab cookie", "secret", multiline=True, optional=True, help="Only used when Chrome cookies are off."),
+                 field("flow_cookie", "Flow cookie", "secret", multiline=True, optional=True),
+                 field("colab_cookie", "Colab cookie", "secret", multiline=True, optional=True),
                  interval("antigravity", "Antigravity", 5, 5),
                  interval("google-flow", "Flow", 30, 30),
                  interval("colab", "Colab", 30, 30, "45"),
@@ -204,7 +204,7 @@ def fixture_settings() -> dict:
              ]},
             {"id": "general", "title": "General", "providers": [],
              "fields": [
-                 field("webhook_url", "Alert webhook", "secret", optional=True, placeholder="https://hooks.slack.com/services/…", help="Receives JSON when a source changes state."),
+                 field("webhook_url", "Alert webhook", "secret", optional=True, placeholder="https://hooks.slack.com/services/…"),
                  field("app_icon", "Icon", "select", options=["gauge", "classic"], default="gauge", help="Menu bar and window mark."),
              ]},
         ]

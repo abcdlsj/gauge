@@ -981,7 +981,7 @@
 
       return `
         <section class="sx-sec">
-          <p class="sx-lead">Connect a new quota source or sign in another account. Up to 3 accounts are supported per provider.</p>
+          <p class="sx-lead">Connect a source or add another account.</p>
           <div class="sx-list">
             <div class="sx-item${googleAtMax && opts.oauth ? ' is-disabled' : ''}" ${googleAction}>
               ${sourceBadge('google', null, 'md')}
@@ -1248,7 +1248,7 @@
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google OAuth</span></div>
             ${renderOAuthCard(id)}
-            <p class="sx-hint">This account monitors Antigravity quota using its own encrypted OAuth refresh token (slot ${inst ? inst.slot : ''}). Flow credits and Colab units belong to the primary Google AI account.</p>
+            <p class="sx-hint">Uses its own token. Flow and Colab stay on the primary account.</p>
           </section>`;
       }
 
@@ -1349,7 +1349,6 @@
       return `
         ${renderSplitSubnav(id, 'schedule')}
         <section class="sx-sec">
-          <p class="sx-lead">How often Gauge polls each collector in the background. Selecting the default clears any custom override.</p>
           <div class="sx-list">${blocks || '<div class="sx-row"><span class="sx-help">No configurable intervals for this source.</span></div>'}</div>
         </section>`;
     }
@@ -1400,7 +1399,7 @@
       return `
         ${backBtn}
         <section class="sx-sec">
-          <p class="sx-lead">Sends an HTTP POST JSON payload whenever a source transitions state (expired auth, errors, or low quota).</p>
+          <p class="sx-lead">POSTs JSON when a source changes state.</p>
           <div class="sx-list">${renderSecret(f, true)}</div>
         </section>
         <section class="sx-sec">
@@ -1424,7 +1423,7 @@
       return `
         ${backBtn}
         <section class="sx-sec">
-          <p class="sx-lead">Every upstream request — Google, Command Code, Open Design — takes this route. Empty follows the environment, then the macOS system proxy, then a direct connection.</p>
+          <p class="sx-lead">Requests use the system proxy unless set here.</p>
           <div class="sx-list">${renderField(f)}</div>
           <div class="sx-form-actions">
             <button class="sx-btn" type="button" data-proxy-test>Test request</button>

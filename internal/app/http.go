@@ -52,7 +52,7 @@ func interval(provider, label string, def, floor int) fieldDef {
 	return fieldDef{
 		Key: "refresh_" + provider + "_minutes", Label: label, Kind: "number", Unit: "min",
 		Default: strconv.Itoa(def), Min: floor,
-		Help: fmt.Sprintf("Minimum %d minutes.", floor),
+		Help: fmt.Sprintf("Minimum %d min.", floor),
 	}
 }
 
@@ -65,10 +65,10 @@ var settingSections = []sectionDef{
 		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
 		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{
-			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Only needed when the IDE is closed. Minted by Sign in with Google.", Sensitive: true, Optional: true},
+			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Only when the IDE is closed.", Sensitive: true, Optional: true},
 			{Key: "browser_cookies", Label: "Read cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Flow and Colab reuse the Chrome sign-in. One keychain prompt."},
-			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
-			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Help: "Only used when Chrome cookies are off.", Sensitive: true, Optional: true},
+			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Sensitive: true, Optional: true},
+			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Sensitive: true, Optional: true},
 			interval("antigravity", "Antigravity", 5, 5),
 			interval("google-flow", "Flow", 30, 30),
 			interval("colab", "Colab", 30, 30),
@@ -107,8 +107,8 @@ var settingSections = []sectionDef{
 	{
 		ID: "general", Title: "General", Providers: []string{},
 		Fields: []fieldDef{
-			{Key: providers.ProxySetting, Label: "Proxy", Kind: "proxy", Placeholder: "http://127.0.0.1:7890", Help: "Empty follows the environment or the macOS system proxy; used for every upstream request.", Optional: true},
-			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Help: "Receives JSON when a source changes state.", Sensitive: true, Optional: true},
+			{Key: providers.ProxySetting, Label: "Proxy", Kind: "proxy", Placeholder: "http://127.0.0.1:7890", Optional: true},
+			{Key: "webhook_url", Label: "Alert webhook", Kind: "secret", Placeholder: "https://hooks.slack.com/services/…", Sensitive: true, Optional: true},
 			// The settings UI draws this one as a picker in the Appearance group.
 			{Key: IconSetting, Label: "Icon", Kind: "select", Options: []string{IconGauge, IconClassic}, Default: IconGauge, Help: "Menu bar and window mark."},
 		},
