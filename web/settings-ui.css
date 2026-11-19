@@ -20,19 +20,19 @@
 }
 
 .sx-split {
-  --sx-fs: 14.5px;
-  --sx-fs-sm: 12px;
-  --sx-pad-x: 16px;
-  --sx-pad-y: 11px;
-  --sx-radius: 14px;
+  --sx-fs: 13.5px;
+  --sx-fs-sm: 11.5px;
+  --sx-pad-x: 14px;
+  --sx-pad-y: 9px;
+  --sx-radius: 12px;
   display: grid;
-  grid-template-columns: 326px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 292px minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
-.sx-split .sx-index { position: sticky; top: 20px; }
+.sx-split .sx-index { position: sticky; top: 16px; }
 @media (max-width: 760px) {
-  .sx-split { grid-template-columns: 1fr; gap: 20px; }
+  .sx-split { grid-template-columns: 1fr; gap: 16px; }
   .sx-split .sx-index { position: static; }
 }
 
@@ -70,7 +70,7 @@
 .sx-split .sx-detail {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -121,6 +121,7 @@
 
 .sx-split .sx-list {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--sx-radius);
   padding: 4px 0;
 }
@@ -304,8 +305,8 @@
   transition: background 0.14s ease, border-color 0.14s ease, transform 0.1s ease;
 }
 .sx-split .sx-add-cta {
-  padding: 11px 14px;
-  border-color: transparent;
+  padding: 10px 13px;
+  border-color: var(--line);
   border-radius: var(--sx-radius);
 }
 .sx-add-cta:hover {
@@ -313,7 +314,7 @@
   border-color: color-mix(in srgb, var(--accent) 42%, var(--line-strong));
 }
 .sx-split .sx-add-cta:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
 }
 .sx-add-cta:active { transform: translateY(0.5px); }
 .sx-add-cta:focus-visible {
@@ -473,8 +474,9 @@
 
 .sx-split .sx-sec-hero {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--sx-radius);
-  padding: 16px 18px;
+  padding: 14px 16px;
 }
 .sx-hero {
   display: flex;
@@ -587,19 +589,20 @@
 
 .sx-subnav {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
   padding: 3px;
-  border-radius: 10px;
-  background: var(--surface);
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   width: fit-content;
 }
 .sx-subnav button {
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
-  padding: 6px 13px;
+  padding: 5px 11px;
   border: none;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -607,9 +610,10 @@
 }
 .sx-subnav button:hover { color: var(--text); }
 .sx-subnav button[aria-selected="true"] {
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 .sx-back-crumb {
@@ -852,8 +856,8 @@ textarea.sx-input {
 }
 .sx-split .sx-oauth-box {
   margin: 0;
-  padding: 13px 16px;
-  border-color: transparent;
+  padding: 12px 14px;
+  border-color: var(--line);
   border-radius: var(--sx-radius);
 }
 .sx-oauth-info {
@@ -1086,8 +1090,9 @@ textarea.sx-input {
 }
 .sx-split .sx-form {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--sx-radius);
-  padding: 18px;
+  padding: 15px 16px;
   margin-top: 0;
 }
 .sx-field-block {
@@ -1124,10 +1129,10 @@ textarea.sx-input {
 }
 .sx-split .sx-code {
   margin: 0;
-  border-color: transparent;
+  border-color: var(--line);
   border-radius: var(--sx-radius);
-  padding: 14px 16px;
-  font-size: 12.5px;
+  padding: 12px 14px;
+  font-size: 12px;
 }
 
 /* ---------- danger zone ---------- */

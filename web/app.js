@@ -49,7 +49,6 @@ function refreshTickers() {
     const ms = new Date(el.dataset.in).getTime() - now;
     el.textContent = Number.isNaN(ms) ? '—' : ms <= 0 ? 'due' : fmtDuration(ms / 1000);
 
-    // Countdowns can escalate while the page sits open.
     const warnUnder = Number(el.dataset.warnUnder || 0);
     const urgentUnder = Number(el.dataset.urgentUnder || 0);
     if (warnUnder) el.classList.toggle('soon', ms > 0 && ms <= warnUnder && !(urgentUnder && ms <= urgentUnder));
@@ -63,6 +62,7 @@ function refreshTickers() {
 let toastTimer = null;
 function toast(message) {
   const el = $('#toast');
+  if (!el) return;
   el.textContent = message;
   el.hidden = false;
   clearTimeout(toastTimer);
@@ -84,22 +84,129 @@ async function api(path, options = {}) {
   return body;
 }
 
+/* ---------- brand & family DNA (shared with popover & settings) ---------- */
+
+const CLOCK_ICON = '<svg class="clock" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">' +
+  '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+  '<path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 4.8V8l2.2 1.3"/></svg>';
+
+const REFRESH_ICON = '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">' +
+  '<path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M16.2 8.4A6.4 6.4 0 1 0 16 12.6M16.2 3.6v4.8h-4.8"/></svg>';
+
+const GEAR_ICON = '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true">' +
+  '<path fill="currentColor" d="M10 6.9A3.1 3.1 0 1 0 10 13.1 3.1 3.1 0 0 0 10 6.9Zm7 3.1c0-.4 0-.7-.1-1l1.4-1.1-1.5-2.6-1.7.6a7 7 0 0 0-1.7-1L13.1 3H9.9l-.3 1.9a7 7 0 0 0-1.7 1l-1.7-.6-1.5 2.6L6.1 9a7.6 7.6 0 0 0 0 2L4.7 12.1l1.5 2.6 1.7-.6c.5.4 1.1.8 1.7 1l.3 1.9h3.2l.3-1.9c.6-.2 1.2-.6 1.7-1l1.7.6 1.5-2.6-1.4-1.1c.1-.3.1-.6.1-1Z"/></svg>';
+
+const SOURCE_META = {
+  google: {
+    tint: 'var(--gemini)',
+    icon: '<svg viewBox="0 0 18 18" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M9 1.5l1.95 5.55L16.5 9l-5.55 1.95L9 16.5l-1.95-5.55L1.5 9l5.55-1.95Z"/></svg>',
+  },
+  commandcode: {
+    tint: 'var(--commandcode)',
+    icon: '<svg viewBox="0 0 18 18" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4.2 5.8 7.8 9l-3.6 3.2M9.2 12.2h4.4"/></svg>',
+  },
+  opendesign: {
+    tint: 'var(--opendesign)',
+    icon: '<svg viewBox="0 0 18 18" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round" d="M9 2.6 15.2 9 9 15.4 2.8 9Z"/><circle cx="9" cy="9" r="1.45" fill="currentColor"/></svg>',
+  },
+  gcp: {
+    tint: 'var(--gcp)',
+    icon: '<svg viewBox="0 0 18 18" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.4 13.5h7.3a2.7 2.7 0 0 0 .4-5.37 4.1 4.1 0 0 0-7.9-1.15 3.1 3.1 0 0 0 .2 6.52Z"/></svg>',
+  },
+};
+
+const FAMILY_GLYPHS = {
+  gemini: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M8 0l1.9 5.6L15.5 7.5 9.9 9.4 8 15l-1.9-5.6L.5 7.5l5.6-1.9Z"/></svg>',
+  claude: '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 1.5v13M2.4 4.75l11.2 6.5M13.6 4.75l-11.2 6.5"/></g></svg>',
+  commandcode: '<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M4.2 5.8 7.8 9l-3.6 3.2M9.2 12.2h4.4"/></svg>',
+  opendesign: '<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M9 2.6 15.2 9 9 15.4 2.8 9Z"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/></svg>',
+  gcp: '<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M5.4 13.5h7.3a2.7 2.7 0 0 0 .4-5.37 4.1 4.1 0 0 0-7.9-1.15 3.1 3.1 0 0 0 .2 6.52Z"/></svg>',
+};
+
+function baseKind(id) {
+  return String(id || '').replace(/-\d+$/, '');
+}
+
+function sourceMetaFor(id) {
+  return SOURCE_META[baseKind(id)] || { tint: 'var(--accent)', icon: SOURCE_META.google.icon };
+}
+
+function cardStyleFor(sn) {
+  const provider = baseKind(sn.provider || '');
+  const metric = sn.metric || '';
+  if (provider === 'antigravity') {
+    if (metric.startsWith('claude')) return { tint: 'var(--claude)', glyph: FAMILY_GLYPHS.claude };
+    if (metric.startsWith('gemini')) return { tint: 'var(--gemini)', glyph: FAMILY_GLYPHS.gemini };
+    return { tint: 'var(--gemini)', glyph: '' };
+  }
+  if (provider === 'commandcode') return { tint: 'var(--commandcode)', glyph: FAMILY_GLYPHS.commandcode };
+  if (provider === 'opendesign') return { tint: 'var(--opendesign)', glyph: FAMILY_GLYPHS.opendesign };
+  if (provider.startsWith('gcp')) return { tint: 'var(--gcp)', glyph: FAMILY_GLYPHS.gcp };
+  return { tint: 'var(--gemini)', glyph: '' };
+}
+
+function planClass(detail) {
+  if (/ultra/i.test(detail || '')) return 'ultra';
+  if (/pro/i.test(detail || '')) return 'pro';
+  return 'free';
+}
+
+function renderGroupEmblem(g, size = 'sm') {
+  const meta = sourceMetaFor(g.id);
+  const kind = baseKind(g.id);
+  if (kind === 'google' && (g.account_name || g.email || g.slot)) {
+    const tier = planClass(g.detail);
+    const initial = esc((g.account_name || g.email || 'G').trim().charAt(0).toUpperCase());
+    const slot = g.slot || 1;
+    const face = g.slot
+      ? `<img src="/api/avatar/${slot}" alt="" loading="eager" onerror="this.remove()" />`
+      : '';
+    return `
+      <span class="g-avatar g-avatar-${size}" data-tier="${tier}">
+        <span class="g-avatar-inner"><span class="g-avatar-init">${initial}</span>${face}</span>
+      </span>`;
+  }
+  return `<span class="g-badge g-badge-${size}" style="--tint:${meta.tint}">${meta.icon}</span>`;
+}
+
 /* ---------- theme ---------- */
 
 const THEMES = ['auto', 'light', 'dark'];
+const THEME_LABELS = { auto: 'Follow system', light: 'Light', dark: 'Dark' };
+const THEME_ICONS = {
+  auto: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">' +
+    '<circle cx="10" cy="10" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/>' +
+    '<path d="M10 3.8a6.2 6.2 0 0 1 0 12.4Z" fill="currentColor"/></svg>',
+  light: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">' +
+    '<circle cx="10" cy="10" r="3.6" fill="currentColor"/>' +
+    '<g stroke="currentColor" stroke-width="1.6" stroke-linecap="round">' +
+    '<path d="M10 2.2v1.8M10 16v1.8M2.2 10h1.8M16 10h1.8M4.5 4.5l1.3 1.3M14.2 14.2l1.3 1.3M15.5 4.5l-1.3 1.3M5.8 14.2l-1.3 1.3"/>' +
+    '</g></svg>',
+  dark: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">' +
+    '<path d="M10 3.2a6.8 6.8 0 1 0 6.8 6.8A5.4 5.4 0 0 1 10 3.2Z" fill="currentColor"/></svg>',
+};
+
+function paintThemeButton(theme) {
+  const btn = $('#theme');
+  if (!btn) return;
+  btn.innerHTML = THEME_ICONS[theme] || THEME_ICONS.auto;
+  btn.title = `Theme: ${THEME_LABELS[theme] || theme}`;
+  btn.setAttribute('aria-label', btn.title);
+}
 
 function applyTheme(theme) {
   const root = document.documentElement;
   if (theme === 'auto') delete root.dataset.theme;
   else root.dataset.theme = theme;
   localStorage.setItem('gauge-theme', theme);
+  paintThemeButton(theme);
 }
 
 function cycleTheme() {
   const current = localStorage.getItem('gauge-theme') || 'auto';
   const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
   applyTheme(next);
-  toast(`Theme: ${next}`);
+  toast(`Theme: ${THEME_LABELS[next]}`);
 }
 
 const themeParam = new URLSearchParams(location.search).get('theme');
@@ -125,8 +232,6 @@ async function load() {
 
 /* ---------- views ---------- */
 
-// Routes: #/overview (the default), #/source/<group> for one subscription,
-// #/activity.
 function route() {
   const path = location.hash.replace(/^#\/?/, '');
   if (path === 'activity') return { view: 'activity' };
@@ -141,8 +246,6 @@ function runOf(provider) {
 
 const SEVERITY = ['expired_auth', 'error', 'warning', 'running', 'ok', 'unconfigured', 'idle'];
 
-// groupStatus is the worst run state among a subscription's collectors that
-// were set up; unconfigured ones do not drag a working group down.
 function groupStatus(g) {
   const states = g.providers.map((p) => (runOf(p) || {}).status || 'idle');
   return states.sort((a, b) => SEVERITY.indexOf(a) - SEVERITY.indexOf(b))[0] || 'idle';
@@ -152,15 +255,12 @@ function snapshotOf(it) {
   return (overview.quotas || []).find((q) => q.provider === it.provider && q.metric === it.metric);
 }
 
-// sourceTabs lists the subscriptions worth a tab: those with cards, or with
-// a collector that needs attention. Never-configured ones stay out.
 function sourceTabs() {
   if (!overview) return [];
   return (overview.layout || []).filter((g) => g.items.length
     || g.providers.some((p) => ['error', 'expired_auth', 'warning'].includes((runOf(p) || {}).status)));
 }
 
-// hiddenSet flattens the layout into the card ids the overview leaves out.
 function hiddenSet() {
   const out = new Set();
   for (const g of overview.layout || []) {
@@ -169,16 +269,38 @@ function hiddenSet() {
   return out;
 }
 
+function groupHandle(g, items) {
+  if (g.email) return g.email;
+  for (const it of items || g.items || []) {
+    const sn = snapshotOf(it);
+    if (sn && sn.account) return sn.account.split('@')[0];
+  }
+  return '';
+}
+
+function groupIssueSummary(g) {
+  const issues = g.providers
+    .map((p) => {
+      const r = runOf(p);
+      if (!r || !['expired_auth', 'error'].includes(r.status)) return null;
+      const meta = (overview.providers || []).find((x) => x.name === p);
+      const name = (meta && meta.title ? meta.title : p).replace(/^Google\s+/i, '');
+      return { status: r.status, text: r.status === 'expired_auth' ? `${name} expired` : `${name} error` };
+    })
+    .filter(Boolean);
+  return issues[0] || null;
+}
+
 function renderNav() {
   const nav = $('#nav');
   if (!nav || isDesktop()) return;
   const r = route();
-  const link = (href, label, active) => `<a href="${href}"${active ? ' aria-current="page"' : ''}>${esc(label)}</a>`;
-  nav.innerHTML = [
-    link('#/overview', 'Overview', r.view === 'usage'),
-    ...sourceTabs().map((g) => link(`#/source/${encodeURIComponent(g.id)}`, g.title, r.view === 'source' && r.source === g.id)),
-    link('#/activity', 'Activity', r.view === 'activity'),
-  ].join('');
+  nav.querySelectorAll('a[data-view]').forEach((a) => {
+    const active = (a.dataset.view === 'usage' && (r.view === 'usage' || r.view === 'source'))
+      || (a.dataset.view === r.view);
+    if (active) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
 }
 
 function showView() {
@@ -209,7 +331,6 @@ let everLoaded = false;
 function render() {
   if (!overview) return;
   if (firstRender) {
-    // A restored webview can reopen mid-page; always start at the top.
     window.scrollTo(0, 0);
     firstRender = false;
   }
@@ -223,11 +344,12 @@ function render() {
   refreshTickers();
 }
 
-// renderAccounts shows one avatar per signed-in identity. The ring encodes the
-// plan: multi-colour for Ultra, blue/green for Pro, grey otherwise.
+// Desktop dock still has an #accounts container; index.html renders accounts
+// inline on each subscription header instead.
 function renderAccounts() {
-  const accounts = overview.accounts || [];
   const root = $('#accounts');
+  if (!root) return;
+  const accounts = overview.accounts || [];
   if (!accounts.length) {
     root.innerHTML = '';
     return;
@@ -247,42 +369,16 @@ function renderAccounts() {
   }).join('');
 }
 
-function accountTag(email) {
-  if (!email) return '';
-  const short = email.split('@')[0];
-  return `<span class="account-tag">${esc(short)}</span>`;
-}
-
-function renderProviders() {
-  const runs = new Map((overview.runs || []).map((r) => [r.provider, r]));
-  const counts = new Map();
-  for (const q of overview.quotas || []) counts.set(q.provider, (counts.get(q.provider) || 0) + 1);
-
-  $('#providers').innerHTML = (overview.providers || []).map((p) => {
-    const run = runs.get(p.name);
-    const status = run ? run.status : 'idle';
-    const word = status === 'ok' ? (counts.get(p.name) ? 'live' : 'ok') : labelForStatus(status).toLowerCase();
-    const next = run && run.next_run
-      ? `<span>next <b data-in="${run.next_run}"></b></span>`
-      : '<span>queued</span>';
-    return `
-      <div class="pcard">
-        <div class="pcard-head">
-          <span class="dot ${esc(status)}"></span>
-          <span class="name">${esc(p.title)}</span>
-          <span class="pstate ${esc(status)}">${esc(word)}</span>
-        </div>
-        <div class="pcard-meta"><span>every ${fmtDuration(p.interval_seconds)}</span>${next}</div>
-      </div>`;
-  }).join('');
-}
-
 function renderUsage() {
   const quotas = overview.quotas || [];
   const runs = new Map((overview.runs || []).map((r) => [r.provider, r]));
   const root = $('#view-usage');
 
-  // The overview shows what the menu bar shows; source tabs show everything.
+  if (!isDesktop()) {
+    renderGroups(root);
+    return;
+  }
+
   const hidden = hiddenSet();
   const byProvider = new Map();
   for (const q of quotas) {
@@ -294,16 +390,11 @@ function renderUsage() {
   const blocks = [];
   const compact = [];
 
-  if (!isDesktop()) {
-    renderGroups(root);
-    return;
-  }
-
   for (const p of overview.providers || []) {
     const items = (byProvider.get(p.name) || []).slice().sort(compareSnapshots);
     const run = runs.get(p.name);
 
-    if (isDesktop() && p.name !== 'antigravity') {
+    if (p.name !== 'antigravity') {
       if (!items.length) {
         const status = run ? run.status : 'idle';
         if (status === 'ok' || status === 'idle' || status === 'running') continue;
@@ -325,11 +416,11 @@ function renderUsage() {
       if (status === 'ok' || status === 'idle' || status === 'running') continue;
       blocks.push(`
         <section class="group" id="group-${esc(p.name)}" data-title="${esc(p.title)}">
-          ${groupHead(p, 0)}
+          ${groupHead(p)}
           <article class="card notice" data-state="${esc(status)}">
-            <div class="card-top">
-              <span class="card-metric">status</span>
-              <span class="chip ${esc(status)}">${esc(labelForStatus(status))}</span>
+            <div class="card-head">
+              <span class="card-title">${esc(p.title)}</span>
+              <span class="pill is-${esc(status)}">${esc(labelForStatus(status))}</span>
             </div>
             <p class="notice-text" title="${esc(run && run.error ? run.error : '')}">${esc(trim(run && run.error ? run.error : 'no readings yet', 260))}</p>
           </article>
@@ -341,9 +432,9 @@ function renderUsage() {
     const cards = items.filter((i) => i.kind !== 'note');
     blocks.push(`
       <section class="group" id="group-${esc(p.name)}" data-title="${esc(p.title)}">
-        ${groupHead(p, cards.length)}
+        ${groupHead(p)}
         ${notes.map(renderGroupNote).join('')}
-        <div class="grid">${cards.map(renderCard).join('')}</div>
+        <div class="grid">${cards.map((sn) => renderCard(sn)).join('')}</div>
       </section>`);
   }
 
@@ -356,7 +447,7 @@ function renderUsage() {
       </section>`);
   }
 
-  if (isDesktop() && everLoaded) {
+  if (everLoaded) {
     const events = (overview.events || []).slice(0, 5);
     const body = events.length
       ? events.map((e) => `
@@ -373,23 +464,13 @@ function renderUsage() {
       </section>`);
   }
 
-  if (isDesktop()) {
-    root.innerHTML = blocks.length
-      ? `<div class="col-main">${blocks.join('')}</div><div class="col-side">${side.join('')}</div>`
-      : everLoaded
-        ? `<div class="empty"><b>No snapshots yet</b>Collectors are running; readings appear after the first successful poll.</div>`
-        : skeletonUsage();
-    return;
-  }
-
-  root.innerHTML = blocks.concat(side).length
-    ? blocks.concat(side).join('')
+  root.innerHTML = blocks.length
+    ? `<div class="col-main">${blocks.join('')}</div><div class="col-side">${side.join('')}</div>`
     : everLoaded
       ? `<div class="empty"><b>No snapshots yet</b>Collectors are running; readings appear after the first successful poll.</div>`
       : skeletonUsage();
 }
 
-// Lowest remaining ratio first; informational cards sink to the end.
 function compareSnapshots(a, b) {
   const rank = (s) => (s.kind === 'note' || s.metric.startsWith('other') ? 1 : 0);
   if (rank(a) !== rank(b)) return rank(a) - rank(b);
@@ -397,23 +478,19 @@ function compareSnapshots(a, b) {
   return ratio(a) - ratio(b);
 }
 
-// renderCompactCard is the dense one-line card used for the small providers.
 function providerLabel(provider, sn) {
   return sn.metric === 'available_accelerators' ? `${provider.title} · accelerators` : provider.title;
 }
 
-// skeletonUsage holds the layout while the first payload is in flight.
 function skeletonUsage() {
   const card = `
     <div class="card skeleton">
-      <span class="sk-line" style="width:42%"></span>
-      <span class="sk-line" style="width:68%;height:26px"></span>
+      <span class="sk-line" style="width:45%"></span>
+      <span class="sk-line" style="width:65%;height:22px"></span>
       <span class="sk-block"></span>
-      <span class="sk-line" style="width:52%"></span>
     </div>`;
   return `
     <section class="group">
-      <div class="group-head"><h2><span class="dot"></span>&nbsp;</h2></div>
       <div class="grid">${card}${card}${card}</div>
     </section>`;
 }
@@ -435,7 +512,7 @@ function renderCompactCard(provider, sn) {
     </div>`;
 }
 
-function groupHead(provider, count) {
+function groupHead(provider) {
   const run = runOf(provider.name);
   const status = run ? run.status : 'idle';
   return `
@@ -444,8 +521,6 @@ function groupHead(provider, count) {
     </div>`;
 }
 
-// problemCards are the notices for a subscription's collectors whose last
-// run failed, so a broken source is visible even without readings.
 function problemCards(g, onlyWithoutData) {
   return g.providers.map((p) => {
     const run = runOf(p);
@@ -454,23 +529,28 @@ function problemCards(g, onlyWithoutData) {
     const title = ((overview.providers || []).find((x) => x.name === p) || {}).title || p;
     return `
       <article class="card notice" data-state="${esc(run.status)}">
-        <div class="card-top"><span class="card-metric">${esc(title)}</span><span class="chip ${esc(run.status)}">${esc(labelForStatus(run.status))}</span></div>
-        <p class="notice-text" title="${esc(run.error)}">${esc(trim(run.error, 260))}</p>
+        <div class="card-head">
+          <span class="card-title"><span class="dot ${esc(run.status)}"></span>${esc(title)}</span>
+          <span class="pill is-${esc(run.status)}">${esc(labelForStatus(run.status))}</span>
+        </div>
+        <p class="notice-text" title="${esc(run.error)}">${esc(trim(run.error, 220))}</p>
+        <div class="card-foot">
+          <a class="inline-link" href="/settings.html#${encodeURIComponent(g.id)}/connection">Configure →</a>
+          ${run.last_run ? `<span><b data-ago="${run.last_run}"></b></span>` : ''}
+        </div>
       </article>`;
   }).join('');
 }
 
-// groupNotes are the text-only rows (Colab accelerators) of the collectors
-// whose cards are on screen.
 function groupNotes(g, providers) {
   return (overview.quotas || [])
     .filter((q) => q.kind === 'note' && providers.has(q.provider) && g.providers.includes(q.provider))
     .map(renderGroupNote).join('');
 }
 
-function cardFor(it) {
+function cardFor(it, opts = {}) {
   const sn = snapshotOf(it);
-  return sn ? renderCard({ ...sn, label: it.label }) : '';
+  return sn ? renderCard({ ...sn, label: it.label }, { ...opts, hidden: !!it.hidden }) : '';
 }
 
 function renderEmptyUsage() {
@@ -492,21 +572,34 @@ function renderEmptyUsage() {
 }
 
 // renderGroups is the browser overview: visible subscriptions in the user's
-// order, each with its visible cards in order.
+// order, each with its visible cards in a compact, unified layout.
 function renderGroups(root) {
   const blocks = (overview.layout || []).filter((g) => !g.hidden).map((g) => {
     const items = g.items.filter((it) => !it.hidden && snapshotOf(it));
     const problems = problemCards(g, true);
     if (!items.length && !problems) return '';
-    const status = groupStatus(g);
+    const handle = groupHandle(g, items);
+    const issue = groupIssueSummary(g);
+    const plan = g.detail
+      ? `<span class="plan-pill ${planClass(g.detail)}">${esc(g.detail)}</span>`
+      : '';
     return `
       <section class="group" id="group-${esc(g.id)}">
         <div class="group-head">
-          <h2><span class="dot ${esc(status)}"></span><a href="#/source/${encodeURIComponent(g.id)}">${esc(g.title)}</a></h2>
-          ${g.detail ? `<span class="hint">${esc(g.detail)}</span>` : ''}
+          <div class="group-id">
+            ${renderGroupEmblem(g, 'sm')}
+            <a class="group-title" href="#/source/${encodeURIComponent(g.id)}">${esc(g.title)}</a>
+            ${plan}
+            ${handle ? `<span class="group-handle">${esc(handle)}</span>` : ''}
+            ${issue ? `<a class="pill is-${esc(issue.status)}" href="#/source/${encodeURIComponent(g.id)}">${esc(issue.text)}</a>` : ''}
+          </div>
+          <div class="group-tools">
+            <button class="tool-btn" type="button" data-providers="${esc(g.providers.join(','))}" title="Refresh ${esc(g.title)}" aria-label="Refresh ${esc(g.title)}">${REFRESH_ICON}</button>
+            <a class="tool-btn" href="/settings.html#${encodeURIComponent(g.id)}" title="${esc(g.title)} settings" aria-label="${esc(g.title)} settings">${GEAR_ICON}</a>
+          </div>
         </div>
         ${groupNotes(g, new Set(items.map((it) => it.provider)))}
-        <div class="grid">${problems}${items.map(cardFor).join('')}</div>
+        <div class="grid">${problems}${items.map((it) => cardFor(it)).join('')}</div>
       </section>`;
   }).filter(Boolean);
 
@@ -519,51 +612,101 @@ function renderGroups(root) {
       : skeletonUsage();
 }
 
-// renderSource is one subscription's tab: every card it has (hidden ones
-// included), the state of each collector, and its actions.
+// renderSource is one subscription's detail view: source switcher sub-bar,
+// hero card with collector health (matching Settings), and every card.
 function renderSource(id) {
   const root = $('#view-source');
   if (!root || !overview) return;
   const g = (overview.layout || []).find((x) => x.id === id);
   if (!g) {
-    root.innerHTML = `<div class="empty"><b>Unknown subscription</b>${esc(id)} is not collected by this panel.</div>`;
+    root.innerHTML = `<div class="empty"><b>Unknown subscription</b>${esc(id)} is not collected by this panel.<div class="empty-actions"><a class="btn" href="#/overview">Back to Overview</a></div></div>`;
     return;
   }
-  const runs = g.providers.map((p) => {
+
+  const tabs = sourceTabs();
+  const switcher = tabs.map((t) =>
+    `<a class="subpill" href="#/source/${encodeURIComponent(t.id)}"${t.id === g.id ? ' aria-current="page"' : ''}>${esc(t.title)}</a>`
+  ).join('');
+
+  const handle = groupHandle(g, g.items);
+  const plan = g.detail
+    ? `<span class="plan-pill ${planClass(g.detail)}">${esc(g.detail)}</span>`
+    : '';
+
+  const healthLines = g.providers.map((p) => {
     const run = runOf(p);
     const meta = (overview.providers || []).find((x) => x.name === p) || { title: p, interval_seconds: 0 };
     const status = run ? run.status : 'idle';
-    const when = run && run.last_run ? `last <b data-ago="${run.last_run}"></b>` : 'not run yet';
+    const stateText = {
+      ok: 'Connected', warning: 'Running low', running: 'Refreshing',
+      unconfigured: 'Not set up', expired_auth: 'Sign-in expired', error: 'Error', idle: 'Waiting',
+    }[status] || status;
+    const when = run && run.last_run ? `<b data-ago="${run.last_run}"></b>` : 'never';
     const next = run && run.next_run ? ` · next <b data-in="${run.next_run}"></b>` : '';
-    return `<span class="source-run"><span class="dot ${esc(status)}"></span>${esc(meta.title)} · every ${fmtDuration(meta.interval_seconds)} · ${when}${next}</span>`;
+    return `
+      <div class="health-line">
+        <span class="dot ${esc(status)}"></span>
+        <span class="health-name">${esc(meta.title)}</span>
+        <span class="health-state is-${esc(status)}">${esc(stateText)}</span>
+        <span class="health-cadence">every ${fmtDuration(meta.interval_seconds)}</span>
+        <span class="health-time">${when}${next}</span>
+      </div>`;
   }).join('');
+
+  const callouts = g.providers.map((p) => {
+    const run = runOf(p);
+    if (!run || !run.error || !['expired_auth', 'error', 'unconfigured'].includes(run.status)) return '';
+    return `
+      <div class="callout is-${esc(run.status)}">
+        <span class="callout-msg" title="${esc(run.error)}">${esc(trim(run.error, 180))}</span>
+        <a class="btn sm" href="/settings.html#${encodeURIComponent(g.id)}/connection">Configure</a>
+      </div>`;
+  }).filter(Boolean).join('');
+
   const items = g.items.filter((it) => snapshotOf(it));
   root.innerHTML = `
-    <section class="group">
-      <div class="group-head source-head">
-        <h2><span class="dot ${esc(groupStatus(g))}"></span>${esc(g.title)}</h2>
-        ${g.detail ? `<span class="hint">${esc(g.detail)}</span>` : ''}
-        <span class="source-actions">
-          <a class="btn" href="/settings.html#${encodeURIComponent(g.id)}">Settings</a>
-          <button class="btn" type="button" data-providers="${esc(g.providers.join(','))}">Refresh</button>
-        </span>
+    <div class="subbar">
+      <a class="back-link" href="#/overview">← Overview</a>
+      <div class="subpills">${switcher}</div>
+    </div>
+
+    <div class="source-hero">
+      <div class="source-hero-top">
+        ${renderGroupEmblem(g, 'lg')}
+        <div class="source-hero-text">
+          <div class="source-hero-name">
+            <h2>${esc(g.account_name || g.title)}</h2>
+            ${plan}
+          </div>
+          <div class="source-hero-sub">${esc(handle || g.title)}</div>
+        </div>
+        <div class="source-actions">
+          <a class="btn sm" href="/settings.html#${encodeURIComponent(g.id)}">Settings</a>
+          <button class="btn sm" type="button" data-providers="${esc(g.providers.join(','))}">Refresh</button>
+        </div>
       </div>
-      <div class="source-runs">${runs}</div>
-      ${groupNotes(g, new Set(g.providers))}
-      ${problemCards(g, false) || items.length ? `<div class="grid">${problemCards(g, false)}${items.map(cardFor).join('')}</div>` : '<div class="empty"><b>No readings yet</b>They appear after the first successful poll.</div>'}
-    </section>`;
+      <div class="source-health">
+        ${healthLines}
+        ${callouts}
+      </div>
+    </div>
+
+    ${groupNotes(g, new Set(g.providers))}
+    ${items.length
+      ? `<div class="grid">${items.map((it) => cardFor(it, { showHiddenTag: true })).join('')}</div>`
+      : '<div class="empty"><b>No readings yet</b>They appear after the first successful poll.</div>'}`;
   refreshTickers();
 }
 
-// renderGroupNote folds plan/tier information into a single line above the grid.
 function renderGroupNote(sn) {
-  return `<p class="group-note"><span class="chip ok">${esc(sn.unit || sn.label)}</span>${esc(sn.note || '')}</p>`;
+  return `<p class="group-note"><span class="pill is-ok">${esc(sn.unit || sn.label)}</span>${esc(sn.note || '')}</p>`;
 }
 
-function renderCard(sn) {
+function renderCard(sn, opts = {}) {
   if (sn.kind === 'note') return renderNoteCard(sn);
-  if (sn.series && sn.series.length > 1) return renderSeriesCard(sn);
+  if (sn.series && sn.series.length > 0) return renderSeriesCard(sn, opts);
 
+  const style = cardStyleFor(sn);
   const total = sn.total || 0;
   const pct = total > 0 ? Math.max(0, Math.min(100, (sn.remaining / total) * 100)) : 0;
   const tone = sn.status === 'error' || sn.status === 'expired_auth' ? 'danger'
@@ -576,87 +719,100 @@ function renderCard(sn) {
       : sn.unit;
 
   const chip = sn.status && sn.status !== 'ok'
-    ? `<span class="chip ${esc(sn.status)}">${esc(labelForStatus(sn.status))}</span>`
-    : '';
+    ? `<span class="pill is-${esc(sn.status)}">${esc(labelForStatus(sn.status))}</span>`
+    : opts.showHiddenTag && opts.hidden
+      ? '<span class="pill is-muted">Hidden</span>'
+      : '';
 
   const reset = sn.reset_at
-    ? `<span>resets in <b data-in="${sn.reset_at}" data-warn-under="3600000" data-urgent-under="900000"></b></span>`
-    : total > 0 ? `<span>${pct.toFixed(1)}% remaining</span>` : '<span>metered</span>';
+    ? `<span class="foot-reset">${CLOCK_ICON}resets in <b data-in="${sn.reset_at}" data-warn-under="3600000" data-urgent-under="900000"></b></span>`
+    : total > 0 ? `<span>${pct.toFixed(1)}% left</span>` : '<span>metered</span>';
+
+  const glyph = style.glyph
+    ? `<span class="card-glyph">${style.glyph}</span>`
+    : `<span class="card-dot"></span>`;
 
   return `
-    <article class="card" data-state="${esc(sn.status || 'ok')}">
-      <div class="card-top">
-        <span class="card-metric">${esc(sn.metric)}</span>
-        ${chip}
+    <article class="card${opts.showHiddenTag && opts.hidden ? ' is-hidden' : ''}" data-state="${esc(sn.status || 'ok')}" style="--tint:${style.tint}">
+      <div class="card-head">
+        <div class="card-title" title="${esc(sn.label)}">${glyph}<span>${esc(sn.label)}</span></div>
+        <div class="card-right">
+          ${chip}
+          <span class="card-ago" data-ago="${sn.updated_at}"></span>
+        </div>
       </div>
-      <h3 class="card-title" title="${esc(sn.label)}">${accountTag(sn.account)}${esc(sn.label)}</h3>
-      <div class="value">
-        <span class="num ${tone === 'ok' ? '' : tone}">${fmtNumber(sn.remaining, sn.unit)}</span>
-        <span class="unit">${esc(unitLabel)}</span>
+      <div class="metric-row">
+        <span class="metric-num ${tone === 'ok' ? '' : tone}">${fmtNumber(sn.remaining, sn.unit)}</span>
+        <span class="metric-unit">${esc(unitLabel)}</span>
       </div>
-      ${total > 0 ? pixels(pct, tone) : ''}
-      <div class="card-foot">
-        ${reset}
-        <span><b data-ago="${sn.updated_at}"></b></span>
-      </div>
+      ${total > 0 ? pixels(pct, tone, 32) : ''}
+      <div class="card-foot">${reset}</div>
     </article>`;
 }
 
-// renderSeriesCard shows one bar per quota window (5-hour, weekly) in one card.
-function renderSeriesCard(sn) {
+// renderSeriesCard shows one compact bar per quota window (5-hour, weekly).
+function renderSeriesCard(sn, opts = {}) {
+  const style = cardStyleFor(sn);
   const rows = sn.series.map((s) => {
     const unit = s.unit || '%';
     const pct = s.total > 0 ? Math.max(0, Math.min(100, (s.remaining / s.total) * 100)) : 0;
     const tone = unit === '%' ? toneFor(pct) : 'ok';
-    const tail = s.reset_at
-      ? `<b data-in="${s.reset_at}" data-warn-under="3600000" data-urgent-under="900000"></b>`
-      : `${pct.toFixed(pct < 10 ? 1 : 0)}%`;
+    const reset = s.reset_at
+      ? `<span class="srow-reset">${CLOCK_ICON}<b data-in="${s.reset_at}" data-warn-under="3600000" data-urgent-under="900000"></b></span>`
+      : '';
     return `
-      <div class="series-row">
-        <div class="series-head">
-          <span class="series-label">${esc(s.label || 'current')}</span>
-          <span class="series-pct ${tone === 'ok' ? '' : tone}">${fmtNumber(s.remaining, unit)}<i>${unit === '%' ? '%' : esc(unit)}</i></span>
-          <span class="series-reset">${tail}</span>
+      <div class="srow">
+        <div class="srow-head">
+          <span class="srow-label">${esc(s.label || 'current')}</span>
+          ${reset}
+          <span class="srow-pct ${tone === 'ok' ? '' : tone}">${fmtNumber(s.remaining, unit)}<i>${unit === '%' ? '% left' : esc(unit)}</i></span>
         </div>
-        ${pixels(pct, tone, 24)}
+        ${pixels(pct, tone, 32)}
       </div>`;
   }).join('');
 
   const chip = sn.status && sn.status !== 'ok'
-    ? `<span class="chip ${esc(sn.status)}">${esc(labelForStatus(sn.status))}</span>` : '';
+    ? `<span class="pill is-${esc(sn.status)}">${esc(labelForStatus(sn.status))}</span>`
+    : opts.showHiddenTag && opts.hidden
+      ? '<span class="pill is-muted">Hidden</span>'
+      : '';
+
+  const glyph = style.glyph
+    ? `<span class="card-glyph">${style.glyph}</span>`
+    : `<span class="card-dot"></span>`;
 
   return `
-    <article class="card" data-state="${esc(sn.status || 'ok')}">
-      <div class="card-top">
-        <span class="card-metric">${esc(sn.metric)}</span>
-        ${chip}
+    <article class="card${opts.showHiddenTag && opts.hidden ? ' is-hidden' : ''}" data-state="${esc(sn.status || 'ok')}" style="--tint:${style.tint}">
+      <div class="card-head">
+        <div class="card-title" title="${esc(sn.label)}">${glyph}<span>${esc(sn.label)}</span></div>
+        <div class="card-right">
+          ${chip}
+          <span class="card-ago" data-ago="${sn.updated_at}"></span>
+        </div>
       </div>
-      <h3 class="card-title" title="${esc(sn.label)}">${accountTag(sn.account)}${esc(sn.label)}</h3>
       <div class="series">${rows}</div>
-      <div class="card-foot right">
-        <span><b data-ago="${sn.updated_at}"></b></span>
-      </div>
     </article>`;
 }
 
-// pixels renders the segmented panel bar used across the dashboard.
-function pixels(pct, tone, segments = 24) {
+function pixels(pct, tone, segments = 32) {
   const lit = Math.round((pct / 100) * segments);
   let html = '';
   for (let i = 0; i < segments; i++) {
     html += `<i class="${i < lit ? 'on' : ''}"></i>`;
   }
-  return `<div class="pixels" data-tone="${esc(tone)}" role="img" aria-label="${pct.toFixed(1)}% remaining">${html}</div>`;
+  return `<div class="pixels" data-tone="${esc(tone)}" style="--segs:${segments}" role="img" aria-label="${pct.toFixed(1)}% remaining">${html}</div>`;
 }
 
 function renderNoteCard(sn) {
+  const style = cardStyleFor(sn);
   return `
-    <article class="card">
-      <div class="card-top"><span class="card-metric">${esc(sn.metric)}</span></div>
-      <h3 class="card-title">${esc(sn.label)}</h3>
+    <article class="card" style="--tint:${style.tint}">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot"></span><span>${esc(sn.label)}</span></div>
+        <span class="card-ago" data-ago="${sn.updated_at}"></span>
+      </div>
       <p class="note-value">${esc(sn.unit || '—')}</p>
       <p class="notice-text">${esc(sn.note || '')}</p>
-      <div class="card-foot right"><span><b data-ago="${sn.updated_at}"></b></span></div>
     </article>`;
 }
 
@@ -670,13 +826,13 @@ function renderActivity() {
     const title = meta ? meta.title : r.provider;
     const cadence = meta ? `every ${fmtDuration(meta.interval_seconds)}` : '';
     const last = r.last_run ? `last <b data-ago="${r.last_run}"></b>` : 'never';
-    const next = r.next_run ? `next <b data-in="${r.next_run}"></b>` : '';
+    const next = r.next_run ? ` · next <b data-in="${r.next_run}"></b>` : '';
     return `
       <div class="run">
         <span class="dot ${esc(r.status)}"></span>
         <span class="run-name">${esc(title)}</span>
-        <span class="chip ${esc(r.status)}">${esc(labelForStatus(r.status))}</span>
-        <span class="run-meta">${esc(cadence)} · ${last}${next ? ' · ' + next : ''}</span>
+        <span class="pill is-${esc(r.status)}">${esc(labelForStatus(r.status))}</span>
+        <span class="run-meta">${esc(cadence)} · ${last}${next}</span>
         <span class="run-dur">${r.duration_ms ? r.duration_ms + 'ms' : ''}</span>
         ${r.error ? `<span class="run-error" title="${esc(r.error)}">${esc(trim(r.error, 160))}</span>` : ''}
       </div>`;
@@ -694,7 +850,10 @@ function renderActivity() {
 function renderSync() {
   const times = (overview.quotas || []).map((q) => new Date(q.updated_at).getTime()).filter((n) => !Number.isNaN(n));
   const latest = times.length ? Math.max(...times) : null;
-  $('#sync').innerHTML = latest ? `synced <b data-ago="${new Date(latest).toISOString()}"></b>` : 'no data yet';
+  const syncEl = $('#sync');
+  if (syncEl) {
+    syncEl.innerHTML = latest ? `synced <b data-ago="${new Date(latest).toISOString()}"></b>` : 'no data yet';
+  }
 
   const footer = $('#footer-meta');
   if (!footer) return;
@@ -706,13 +865,13 @@ function renderSync() {
 
 function labelForStatus(status) {
   return {
-    ok: 'ok',
-    warning: 'low',
-    error: 'error',
-    expired_auth: 'auth expired',
-    unconfigured: 'setup',
-    running: 'running',
-    idle: 'idle',
+    ok: 'OK',
+    warning: 'Low',
+    error: 'Error',
+    expired_auth: 'Expired',
+    unconfigured: 'Setup',
+    running: 'Running',
+    idle: 'Idle',
   }[status] || status;
 }
 
@@ -736,22 +895,24 @@ async function refreshProvider(name, button) {
   }
 }
 
-// refreshGroup refreshes every collector of a subscription and reports the
-// first failure.
 async function refreshGroup(names, button) {
   button.disabled = true;
-  const results = await Promise.all(names.map((n) =>
-    api(`/api/refresh/${encodeURIComponent(n)}`, { method: 'POST' }).catch((err) => ({ status: err.status === 429 ? 'cooldown' : 'error', error: err.message, provider: n }))));
-  const bad = results.find((r) => r && r.status && !['ok', 'running'].includes(r.status));
-  toast(bad ? (bad.status === 'cooldown' ? 'Cooling down, try again in a minute' : `${bad.provider}: ${trim(bad.error || bad.status, 80)}`) : 'Refreshed');
-  button.disabled = false;
-  await load();
+  button.classList.add('is-spinning');
+  try {
+    const results = await Promise.all(names.map((n) =>
+      api(`/api/refresh/${encodeURIComponent(n)}`, { method: 'POST' }).catch((err) => ({ status: err.status === 429 ? 'cooldown' : 'error', error: err.message, provider: n }))));
+    const bad = results.find((r) => r && r.status && !['ok', 'running'].includes(r.status));
+    toast(bad ? (bad.status === 'cooldown' ? 'Cooling down, try again in a minute' : `${bad.provider}: ${trim(bad.error || bad.status, 80)}`) : 'Refreshed');
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-spinning');
+    await load();
+  }
 }
 
 async function refreshAll(button) {
   button.disabled = true;
-  const label = button.textContent;
-  button.textContent = 'Refreshing…';
+  button.classList.add('is-spinning');
   try {
     const res = await api('/api/refresh-all', { method: 'POST' });
     const runs = (res && res.runs) || [];
@@ -764,7 +925,7 @@ async function refreshAll(button) {
     toast(`Refresh failed: ${err.message}`);
   } finally {
     button.disabled = false;
-    button.textContent = label;
+    button.classList.remove('is-spinning');
     await load();
   }
 }
