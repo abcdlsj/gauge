@@ -49,6 +49,29 @@ html[data-shell="popover"] .panel {
   html[data-shell="popover"] .panel { transition: none; }
 }
 
+/* During height measurement, release every flex/viewport constraint so
+   measureWindowHeight reads the true natural height of the active page —
+   even when expanding back out of a short 320px subpage. */
+html[data-shell="popover"].is-measuring,
+html[data-shell="popover"].is-measuring body {
+  height: auto !important;
+  overflow: visible !important;
+}
+html[data-shell="popover"].is-measuring .panel {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  transition: none !important;
+}
+html[data-shell="popover"].is-measuring .set-view,
+html[data-shell="popover"].is-measuring .scroll-wrap,
+html[data-shell="popover"].is-measuring .scroll-area {
+  flex: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
 /* ---------- header ---------- */
 
 .pop-head {

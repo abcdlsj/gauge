@@ -1479,6 +1479,7 @@
                   ${esc(c.url.replace(/^http:\/\//, ''))}<i>${Math.max(1, c.latency_ms)} ms</i>
                 </button>`).join('')}`
             : `<span class="sx-sub-dim">No local proxy answered on the usual ports (Clash, Surge, v2rayN).</span>`;
+          if (opts.onRender) opts.onRender();
         }
       } catch (err) {
         toast(err.message);

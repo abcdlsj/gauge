@@ -574,26 +574,15 @@ let lastSentHeight = 0;
 let resizeTimer = 0;
 
 function measureWindowHeight(panel) {
+  const root = document.documentElement;
   const body = document.body;
   const scrollers = [document.querySelector('#pop-body'), document.querySelector('#settings-root')].filter(Boolean);
   const offsets = scrollers.map((el) => el.scrollTop);
-  const prevBodyHeight = body.style.getPropertyValue('height');
-  const prevMax = panel.style.maxHeight;
-  const prevTransition = panel.style.transition;
-  const prevPanelH = panel.style.getPropertyValue('--panel-h');
 
-  panel.style.transition = 'none';
-  panel.style.setProperty('--panel-h', 'auto');
-  body.style.setProperty('height', 'auto', 'important');
-  panel.style.maxHeight = 'none';
+  root.classList.add('is-measuring');
   const content = panel.getBoundingClientRect().height;
+  root.classList.remove('is-measuring');
 
-  body.style.removeProperty('height');
-  panel.style.maxHeight = prevMax;
-  if (prevBodyHeight) body.style.setProperty('height', prevBodyHeight, 'important');
-  if (prevPanelH) panel.style.setProperty('--panel-h', prevPanelH);
-  else panel.style.removeProperty('--panel-h');
-  panel.style.transition = prevTransition;
   // Lifting the cap scrolls the list back to the top; put it back where it was.
   scrollers.forEach((el, i) => { el.scrollTop = offsets[i]; });
 
