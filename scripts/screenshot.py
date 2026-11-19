@@ -148,6 +148,11 @@ def fixture_overview() -> dict:
     }
 
 
+def fixture_proxy() -> dict:
+    """The /api/proxy shape: the macOS system proxy is in effect."""
+    return {"config": {"setting": "", "url": "http://127.0.0.1:7890", "source": "system", "direct": False}}
+
+
 def fixture_update() -> dict:
     """The /api/update shape: the running build, up to date."""
     return {"current": "0.4.0", "latest": "0.4.0", "available": False,
@@ -204,6 +209,7 @@ def fixture_settings() -> dict:
              ]},
             {"id": "general", "title": "General", "providers": [],
              "fields": [
+                 field("proxy_url", "Proxy", "proxy", optional=True, placeholder="http://127.0.0.1:7890"),
                  field("webhook_url", "Alert webhook", "secret", optional=True, placeholder="https://hooks.slack.com/services/…"),
                  field("app_icon", "Icon", "select", options=["gauge", "classic"], default="gauge", help="Menu bar and window mark."),
              ]},
@@ -375,6 +381,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._send_json(fixture_settings())
             case "/api/update":
                 self._send_json(fixture_update())
+            case "/api/proxy":
+                self._send_json(fixture_proxy())
             case "/icon/preview.html":
                 self._send(ICON_PREVIEW.encode(), "text/html; charset=utf-8")
             case "/icon/AppIcon.png":

@@ -1423,7 +1423,6 @@
       return `
         ${backBtn}
         <section class="sx-sec">
-          <p class="sx-lead">Requests use the system proxy unless set here.</p>
           <div class="sx-list">${renderField(f)}</div>
           <div class="sx-form-actions">
             <button class="sx-btn" type="button" data-proxy-test>Test request</button>
