@@ -473,6 +473,24 @@ function cardFor(it) {
   return sn ? renderCard({ ...sn, label: it.label }) : '';
 }
 
+function renderEmptyUsage() {
+  const runs = overview.runs || [];
+  const hasSetup = runs.some((r) => r.status === 'unconfigured' || r.status === 'expired_auth' || r.status === 'error');
+  const checking = !hasSetup && runs.some((r) => r.status === 'running' || r.status === 'idle');
+  if (checking) {
+    return '<div class="empty"><b>Checking local accounts…</b>Looking for IDE, CLI and browser sessions. Readings appear as soon as the first poll completes.</div>';
+  }
+  return `
+    <div class="empty">
+      <b>Connect a source</b>
+      Add Google AI, Command Code, Open Design or Google Cloud in Settings to start tracking quota.
+      <div class="empty-actions">
+        <a class="btn primary" href="/settings.html#add">Connect a source</a>
+        <a class="btn" href="/settings.html#general/network">Network settings</a>
+      </div>
+    </div>`;
+}
+
 // renderGroups is the browser overview: visible subscriptions in the user's
 // order, each with its visible cards in order.
 function renderGroups(root) {
@@ -496,8 +514,8 @@ function renderGroups(root) {
     ? blocks.join('')
     : everLoaded
       ? (overview.quotas || []).length
-        ? '<div class="empty"><b>Everything is hidden</b>Turn subscriptions or cards back on in Settings.</div>'
-        : '<div class="empty"><b>No snapshots yet</b>Collectors are running; readings appear after the first successful poll.</div>'
+        ? '<div class="empty"><b>Everything is hidden</b>Turn subscriptions or cards back on in Settings.<div class="empty-actions"><a class="btn" href="/settings.html">Open Settings</a></div></div>'
+        : renderEmptyUsage()
       : skeletonUsage();
 }
 

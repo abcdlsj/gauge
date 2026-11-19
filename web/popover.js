@@ -256,15 +256,40 @@ function bodyFor(cards) {
     : renderMini(sn, shortNames[sn.metric] || it.label))).join('');
 }
 
-// STATE_WORD is the one word the startup list puts next to a source.
+// STATE_WORD is the short label the startup list puts next to a source.
 const STATE_WORD = {
-  ok: 'ready',
-  running: 'collecting…',
-  unconfigured: 'not set up',
-  expired_auth: 'sign-in expired',
-  error: 'failed',
-  idle: 'waiting',
+  ok: 'Ready',
+  running: 'Checking…',
+  unconfigured: 'Set up',
+  expired_auth: 'Reconnect',
+  error: 'Failed',
+  idle: 'Waiting',
 };
+
+const SETUP_META = {
+  google: {
+    tint: 'var(--gemini)',
+    desc: 'Antigravity, Flow & Colab',
+    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9 1.5l1.95 5.55L16.5 9l-5.55 1.95L9 16.5l-1.95-5.55L1.5 9l5.55-1.95Z"/></svg>',
+  },
+  commandcode: {
+    tint: 'var(--commandcode)',
+    desc: '5-hour & weekly plan windows',
+    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M4.2 5.8 7.8 9l-3.6 3.2M9.2 12.2h4.4"/></svg>',
+  },
+  opendesign: {
+    tint: 'var(--opendesign)',
+    desc: 'Design Plan & USD balance',
+    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round" d="M9 2.6 15.2 9 9 15.4 2.8 9Z"/><circle cx="9" cy="9" r="1.45" fill="currentColor"/></svg>',
+  },
+  gcp: {
+    tint: 'var(--gcp)',
+    desc: 'BigQuery billing & Gemini API',
+    icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.4 13.5h7.3a2.7 2.7 0 0 0 .4-5.37 4.1 4.1 0 0 0-7.9-1.15 3.1 3.1 0 0 0 .2 6.52Z"/></svg>',
+  },
+};
+
+const SETUP_CHEVRON = '<svg class="setup-chev" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m8 5 5 5-5 5"/></svg>';
 
 // SEVERITY puts the state worth fixing first, the same order Settings uses.
 const SEVERITY = ['expired_auth', 'error', 'unconfigured', 'running', 'idle', 'ok'];
@@ -290,54 +315,93 @@ function startupState(overview) {
       const run = own[0] || null;
       const status = run ? run.status : 'idle';
       const error = String((run && run.error) || '');
+      const base = g.id.replace(/-\d+$/, '');
+      const meta = SETUP_META[base] || SETUP_META.google;
+      const directToConn = status === 'unconfigured' || status === 'expired_auth' || status === 'error';
       return {
         id: g.id,
+        route: directToConn ? `${g.id}/connection` : g.id,
         title: g.title,
         status,
-        word: STATE_WORD[status] || status,
+        word: status === 'unconfigured' && base === 'google' ? 'Sign in' : (STATE_WORD[status] || status),
         detail: error,
-        note: error ? friendlyError(error) : '',
+        note: status === 'error' || status === 'expired_auth' ? friendlyError(error) : meta.desc,
         network: NETWORK_ERROR.test(error),
+        meta,
       };
     });
   const failing = rows.filter((r) => r.status === 'error' || r.status === 'expired_auth').length;
   const setup = rows.filter((r) => r.status === 'unconfigured').length;
+  const running = rows.some((r) => r.status === 'running' || r.status === 'idle');
+  const collecting = running && !failing && !setup;
   const network = rows.some((r) => r.network);
   const word = network ? 'network unreachable'
     : failing ? 'refresh failed'
       : setup ? 'setup needed'
-        : rows.length ? 'no data yet' : 'starting…';
-  return { rows, word, network };
+        : collecting ? 'checking…'
+          : rows.length ? 'no data yet' : 'starting…';
+  return { rows, word, network, collecting, running };
 }
 
 function friendlyError(message) {
   const text = String(message || '').replace(/\s+/g, ' ').trim();
-  if (NETWORK_ERROR.test(text)) return 'no connection — check the proxy';
+  if (NETWORK_ERROR.test(text)) return 'No connection — check proxy settings';
   return text.replace(/^[a-z][a-z ]*: /i, '').slice(0, 120);
 }
 
 function renderStartup(overview) {
-  const { rows, network } = startupState(overview);
+  const { rows, network, collecting } = startupState(overview);
+  const heading = network
+    ? 'Cannot reach upstream'
+    : collecting
+      ? 'Checking local accounts…'
+      : 'Connect a source';
+  const sub = network
+    ? 'Your network could not reach the provider API.'
+    : collecting
+      ? 'Looking for local IDE, CLI and browser sessions.'
+      : 'Pick a subscription to start tracking quota.';
   const list = rows.map((r) => `
-    <button class="setup-row" type="button" data-settings="${esc(r.id)}" title="${esc(r.detail || '')}">
-      <span class="setup-name">${esc(r.title)}</span>
+    <button class="setup-row" type="button" data-settings="${esc(r.route)}" title="${esc(r.detail || '')}">
+      <span class="setup-badge" style="--tint: ${r.meta.tint}">${r.meta.icon}</span>
+      <span class="setup-main">
+        <span class="setup-name">${esc(r.title)}</span>
+        ${r.note ? `<span class="setup-note${r.status === 'error' || r.status === 'expired_auth' ? ' is-err' : ''}">${esc(r.note)}</span>` : ''}
+      </span>
       <span class="setup-word is-${esc(r.status)}">${esc(r.word)}</span>
-      ${r.note ? `<span class="setup-note">${esc(r.note)}</span>` : ''}
+      ${SETUP_CHEVRON}
     </button>`).join('');
+  const foot = network
+    ? `<div class="setup-banner">
+         <span>Proxy may be required on this network.</span>
+         <button class="setup-banner-btn" type="button" data-settings="${NETWORK_SETTINGS}">Check proxy</button>
+       </div>`
+    : `<div class="setup-foot">Behind a proxy? <button class="setup-link" type="button" data-settings="${NETWORK_SETTINGS}">Configure network</button></div>`;
   return `
     <div class="setup">
-      <div class="setup-head">Nothing collected yet</div>
+      <div class="setup-intro">
+        <div class="setup-head">${esc(heading)}</div>
+        <div class="setup-sub">${esc(sub)}</div>
+      </div>
       <div class="setup-list">${list}</div>
-      <div class="setup-foot">${network
-        ? 'Upstream is unreachable. <button class="setup-link" type="button" data-settings="' + NETWORK_SETTINGS + '">Check the proxy</button>'
-        : 'Open a source to add what it needs.'}</div>
+      ${foot}
     </div>`;
+}
+
+let fastPollTimer = 0;
+function scheduleFastPoll() {
+  if (fastPollTimer) return;
+  fastPollTimer = setTimeout(() => {
+    fastPollTimer = 0;
+    if (!document.hidden) load();
+  }, 2000);
 }
 
 function render(overview) {
   const quotas = overview.quotas || [];
   const root = $('#pop-body');
   const sources = renderGroups(overview);
+  const st = startupState(overview);
   root.innerHTML = sources
     || (quotas.length
       ? '<div class="mini notice">Every card is hidden. Turn some on in Settings.</div>'
@@ -347,8 +411,9 @@ function render(overview) {
   const latest = times.length ? Math.max(...times) : null;
   $('#sync').innerHTML = latest
     ? `updated <b data-ago="${new Date(latest).toISOString()}"></b>`
-    : esc(startupState(overview).word);
+    : esc(st.word);
   refreshTickers();
+  if (!quotas.length && st.running) scheduleFastPoll();
   if (!document.body.classList.contains('settings-open')) fitWindow();
   syncScrollDepth();
 }
@@ -607,6 +672,7 @@ setInterval(refreshTickers, 1000);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   load();
+  if (document.body.classList.contains('settings-open')) settingsUI.reload();
   fitWindow();
 });
 syncScrollDepth();

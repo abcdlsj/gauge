@@ -425,7 +425,7 @@
       let prevStr = navStack.length ? navStack.pop() : null;
       if (prevStr === null) {
         if (route.kind === 'add-instance') prevStr = 'add';
-        else if (route.kind === 'webhook') prevStr = 'general';
+        else if (route.kind === 'webhook' || route.kind === 'network') prevStr = 'general';
         else if (route.kind === 'connection' || route.kind === 'schedule') prevStr = route.id;
         else prevStr = '';
       }
@@ -933,11 +933,29 @@
 
     /* ---------- Level 2: Add Subscription ---------- */
 
+    function primaryConfigured(provider, secretKey) {
+      const sec = section(provider);
+      const keyField = sec && sec.fields.find((f) => f.key === secretKey);
+      if (keyField && keyField.configured) return true;
+      const g = groupOf(provider);
+      if (g && g.items && g.items.length > 0) return true;
+      const st = stateForProviders([provider]);
+      return Boolean(st && st.status === 'ok');
+    }
+
     function renderAdd() {
       const accounts = accountsList();
       const groups = layoutGroups();
-      const ccCount = groups.filter((g) => g.id === 'commandcode' || g.id.startsWith('commandcode-')).length;
-      const odCount = groups.filter((g) => g.id === 'opendesign' || g.id.startsWith('opendesign-')).length;
+      const ccPrimary = primaryConfigured('commandcode', 'commandcode_api_key');
+      const ccExtras = groups.filter((g) => g.id.startsWith('commandcode-')).length;
+      const ccCount = (ccPrimary ? 1 : 0) + ccExtras;
+      const ccTotalSlots = groups.filter((g) => g.id === 'commandcode' || g.id.startsWith('commandcode-')).length;
+
+      const odPrimary = primaryConfigured('opendesign', 'opendesign_control_key');
+      const odExtras = groups.filter((g) => g.id.startsWith('opendesign-')).length;
+      const odCount = (odPrimary ? 1 : 0) + odExtras;
+      const odTotalSlots = groups.filter((g) => g.id === 'opendesign' || g.id.startsWith('opendesign-')).length;
+
       const gcpSec = section('gcp');
       const gcpProj = gcpSec && gcpSec.fields.find((f) => f.key === 'gcp_project_id');
       const gcpTbl = gcpSec && gcpSec.fields.find((f) => f.key === 'gcp_billing_table');
@@ -948,8 +966,10 @@
         ? 'data-oauth-slot="next" role="button" tabindex="0"'
         : !opts.oauth ? 'data-nav="google" role="button" tabindex="0"' : 'aria-disabled="true"';
 
-      const ccFull = ccCount >= 3;
-      const odFull = odCount >= 3;
+      const ccFull = ccTotalSlots >= 3 && ccPrimary;
+      const odFull = odTotalSlots >= 3 && odPrimary;
+      const ccTarget = ccPrimary ? 'add/commandcode' : 'commandcode/connection';
+      const odTarget = odPrimary ? 'add/opendesign' : 'opendesign/connection';
 
       return `
         <section class="sx-sec">
@@ -965,23 +985,23 @@
               ${googleAtMax && opts.oauth ? '' : CHEVRON}
             </div>
 
-            <div class="sx-item${ccFull ? ' is-disabled' : ''}" ${ccFull ? 'aria-disabled="true"' : 'data-nav="add/commandcode" role="button" tabindex="0"'}>
+            <div class="sx-item${ccFull ? ' is-disabled' : ''}" ${ccFull ? 'aria-disabled="true"' : `data-nav="${ccTarget}" role="button" tabindex="0"`}>
               ${sourceBadge('commandcode', null, 'md')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Command Code Account</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.commandcode.desc)} · ${ccCount}/3 slots</span></div>
+                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.commandcode.desc)} · ${ccCount}/3 connected</span></div>
               </div>
-              <span class="sx-pill is-muted">${ccFull ? 'Max 3' : 'API key'}</span>
+              <span class="sx-pill ${ccFull ? 'is-muted' : (ccPrimary ? 'is-muted' : 'is-accent')}">${ccFull ? 'Max 3' : 'API key'}</span>
               ${ccFull ? '' : CHEVRON}
             </div>
 
-            <div class="sx-item${odFull ? ' is-disabled' : ''}" ${odFull ? 'aria-disabled="true"' : 'data-nav="add/opendesign" role="button" tabindex="0"'}>
+            <div class="sx-item${odFull ? ' is-disabled' : ''}" ${odFull ? 'aria-disabled="true"' : `data-nav="${odTarget}" role="button" tabindex="0"`}>
               ${sourceBadge('opendesign', null, 'md')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Open Design Account</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.opendesign.desc)} · ${odCount}/3 slots</span></div>
+                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.opendesign.desc)} · ${odCount}/3 connected</span></div>
               </div>
-              <span class="sx-pill is-muted">${odFull ? 'Max 3' : 'Control key'}</span>
+              <span class="sx-pill ${odFull ? 'is-muted' : (odPrimary ? 'is-muted' : 'is-accent')}">${odFull ? 'Max 3' : 'Control key'}</span>
               ${odFull ? '' : CHEVRON}
             </div>
 
@@ -1255,12 +1275,14 @@
           </section>`;
       }
 
-      // Command Code, Open Design, or generic source
+      // Command Code, Open Design, or generic source: open the credential input
+      // straight away when no key is stored yet so onboarding takes one step.
+      const autoOpenSecret = sec.id === 'commandcode' || sec.id === 'opendesign';
       return `
         ${subnav}
         <section class="sx-sec">
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">${inst ? 'Account credentials' : 'Credentials'}</span></div>
-          <div class="sx-list">${fields.map(renderField).join('')}</div>
+          <div class="sx-list">${fields.map((f) => (f.kind === 'secret' ? renderSecret(f, autoOpenSecret) : renderField(f))).join('')}</div>
         </section>`;
     }
 
@@ -1557,6 +1579,28 @@
       }
     }
 
+    function schedulePostSaveRefresh() {
+      for (const delay of [1500, 4000]) {
+        setTimeout(() => {
+          if (!root.isConnected || document.hidden) return;
+          if (opts.onSaved) opts.onSaved();
+          reloadSection();
+        }, delay);
+      }
+    }
+
+    function triggersRefresh(key) {
+      return key === 'proxy_url'
+        || key === 'browser_cookies'
+        || key === 'flow_cookie'
+        || key === 'colab_cookie'
+        || key.startsWith('antigravity_refresh_token')
+        || key.startsWith('commandcode_api_key')
+        || key.startsWith('opendesign_control_key')
+        || key.startsWith('gcp_')
+        || key === 'google_refresh_token';
+    }
+
     async function saveText(input) {
       const key = input.dataset.text;
       const f = fieldOf(key);
@@ -1573,6 +1617,7 @@
           const cur = root.querySelector(`[data-text="${CSS.escape(key)}"]`);
           if (cur) cur.placeholder = f.default;
         }
+        if (triggersRefresh(key)) schedulePostSaveRefresh();
       } else {
         flag(key, 'error', 'Not saved');
       }
@@ -1805,8 +1850,10 @@
         t.disabled = true;
         if (await save(d.saveSecret, value)) {
           editing = null;
-          toast('Saved');
+          const refreshes = triggersRefresh(d.saveSecret);
+          toast(refreshes ? 'Saved · refreshing…' : 'Saved');
           await reloadSection();
+          if (refreshes) schedulePostSaveRefresh();
         } else {
           t.disabled = false;
         }
@@ -1832,8 +1879,9 @@
       }
       if (d.proxyUse) {
         if (await save('proxy_url', d.proxyUse)) {
-          toast('Proxy set');
+          toast('Proxy set · refreshing…');
           render();
+          schedulePostSaveRefresh();
         }
         return;
       }
@@ -1924,7 +1972,10 @@
         const value = t.checked ? f.options[0] : f.options[1];
         save(t.dataset.switch, value).then((ok) => {
           if (!ok) t.checked = !t.checked;
-          else render();
+          else {
+            render();
+            if (triggersRefresh(t.dataset.switch)) schedulePostSaveRefresh();
+          }
         });
       } else if (t.dataset.text) {
         saveText(t);
@@ -1998,11 +2049,19 @@
         } else {
           toast('Finish sign-in in the popup');
         }
+        const hadSlot = accountsList().some((a) => a.slot === slot);
         let ticks = 0;
         const timer = setInterval(async () => {
           await reloadSection();
-          if (++ticks >= 18 || (popup && popup.closed)) clearInterval(timer);
-        }, 5000);
+          if (opts.onSaved) opts.onSaved();
+          const hasNow = accountsList().some((a) => a.slot === slot);
+          if (!hadSlot && hasNow) {
+            clearInterval(timer);
+            toast('Google account connected');
+            return;
+          }
+          if (++ticks >= 36 || (popup && popup.closed)) clearInterval(timer);
+        }, 2500);
       } catch (err) {
         toast(`Sign-in failed: ${err.message}`);
       }

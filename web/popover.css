@@ -282,56 +282,151 @@ body.is-resizing .scroll-area::-webkit-scrollbar { display: none; }
 
 /* ---------- startup / empty state ---------- */
 
-/* No snapshots yet: name every source and its state instead of one vague
-   "warming up" line, and link each row to the page that fixes it. */
-.setup { padding: 2px 0; }
+/* No snapshots yet: guide the user to connect their first source with the same
+   borderless instrument styling used in Settings. */
+.setup { padding: 2px 0 4px; }
+.setup-intro {
+  padding: 6px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .setup-head {
-  padding: 6px 14px 4px;
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text);
+}
+.setup-sub {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.35;
 }
 .setup-list { display: flex; flex-direction: column; }
 .setup-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1px 10px;
-  align-items: baseline;
-  padding: 6px 14px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 5px;
+  padding: 8px 9px;
   border: none;
-  border-radius: 0;
+  border-radius: 9px;
   background: transparent;
   font: inherit;
   text-align: left;
   color: inherit;
   cursor: pointer;
+  transition: background 0.12s ease;
+}
+.setup-row + .setup-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 9px;
+  right: 9px;
+  height: 1px;
+  background: color-mix(in srgb, var(--line) 72%, transparent);
+  pointer-events: none;
 }
 .setup-row:hover { background: var(--surface-2); }
+.setup-row:hover::before,
+.setup-row:hover + .setup-row::before { opacity: 0; }
+.setup-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.setup-badge {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 13%, transparent);
+}
+.setup-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 .setup-name {
   font-size: 12.5px;
+  font-weight: 600;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.setup-word {
-  font-size: 11px;
-  color: var(--muted);
-  text-align: right;
-  white-space: nowrap;
-}
-.setup-word.is-error,
-.setup-word.is-expired_auth { color: var(--danger); }
 .setup-note {
-  grid-column: 1 / -1;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.setup-note.is-err { color: var(--danger); }
+.setup-word {
+  flex: none;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.1;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.setup-word.is-unconfigured {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.setup-word.is-error,
+.setup-word.is-expired_auth {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.setup-word.is-running {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.setup-chev {
+  flex: none;
+  color: var(--faint);
+  opacity: 0.6;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.setup-row:hover .setup-chev { transform: translateX(1.5px); opacity: 1; }
+.setup-banner {
+  margin: 10px 14px 4px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--danger);
+}
+.setup-banner-btn {
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.setup-banner-btn:hover { background: var(--surface-2); }
 .setup-foot {
-  padding: 8px 14px 4px;
+  padding: 10px 14px 4px;
   font-size: 11px;
   color: var(--faint);
 }

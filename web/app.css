@@ -574,6 +574,19 @@ footer {
   font-size: 15.5px;
 }
 .empty b { display: block; color: var(--text); font-weight: 550; margin-bottom: 4px; }
+.empty-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.empty-actions .btn { text-decoration: none; }
+.btn.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn.primary:hover { filter: brightness(1.07); }
 
 button.link {
   font: inherit;
