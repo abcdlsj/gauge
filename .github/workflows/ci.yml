@@ -40,8 +40,7 @@ jobs:
       - run: go test -tags purego ./...
 
   # The desktop app is macOS-only (menu bar popover, template icons, Chrome
-  # cookie decryption through the macOS keychain). The headless server is pure
-  # Go and has to keep building everywhere.
+  # cookie decryption through the macOS keychain).
   app:
     name: macos app bundle
     runs-on: macos-latest
@@ -68,22 +67,4 @@ jobs:
         with:
           name: macos-app
           path: build/dist/Gauge-*-macos-universal.*
-          if-no-files-found: error
-
-  server:
-    name: headless builds
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: make server-dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: headless
-          path: build/dist/gauge-*
           if-no-files-found: error

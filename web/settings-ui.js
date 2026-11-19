@@ -1,7 +1,7 @@
 'use strict';
 
-// Settings UI shared by the menubar popover (stack) and the browser settings
-// page (split). Renders a 3-level hierarchy matching the Home popover's
+// Settings UI for the menubar popover. Renders a 3-level stack matching the
+// Home popover's
 // borderless instrument aesthetic:
 //   Level 1: Subscriptions + Preferences index
 //   Level 2: Subscription detail (cards, health, drill-downs), Add Subscription, General
@@ -156,7 +156,6 @@
   function create(opts) {
     const root = opts.root;
     const toast = opts.toast || (() => {});
-    const layout = opts.layout || 'stack';
 
     let sections = [];
     let overview = null;
@@ -168,7 +167,7 @@
     let confirmRemove = false;
     let pendingDir = null; // 'fwd' | 'back' | null
 
-    root.classList.add('sx', `sx-${layout}`);
+    root.classList.add('sx', 'sx-stack');
 
     // Handle avatar image 404s cleanly under strict CSP (no inline onerror).
     root.addEventListener('error', (e) => {
@@ -396,12 +395,7 @@
         root.innerHTML = `<p class="sx-empty">Cannot load settings: ${esc(err.message)}</p>`;
         return;
       }
-      const parsed = parseRoute(target);
-      if (layout === 'split') {
-        route = parsed || parseRoute((sections[0] && sections[0].id) || 'general');
-      } else {
-        route = parsed;
-      }
+      route = parseRoute(target);
       navStack = [];
       editing = null;
       confirmRemove = false;
@@ -412,7 +406,7 @@
 
     function navigate(targetStr, dir = 'fwd') {
       const next = parseRoute(targetStr);
-      if (layout === 'stack' && dir === 'fwd') {
+      if (dir === 'fwd') {
         const curStr = serializeRoute(route);
         if (curStr !== serializeRoute(next)) {
           if (navStack[navStack.length - 1] !== curStr) navStack.push(curStr);
@@ -426,7 +420,7 @@
     }
 
     function back() {
-      if (layout !== 'stack' || !route) return false;
+      if (!route) return false;
       let prevStr = navStack.length ? navStack.pop() : null;
       if (prevStr === null) {
         if (route.kind === 'add-instance') prevStr = 'add';
@@ -627,7 +621,6 @@
     function renderIndex() {
       const groups = layoutGroups().filter((g) => section(g.id));
       const visibleCount = groups.filter((g) => !g.hidden).length;
-      const curStr = serializeRoute(route);
 
       const groupRows = groups.map((g) => {
         const sec = section(g.id) || {};
@@ -635,7 +628,6 @@
         const st = stateForProviders(provs);
         const isGoogle = g.id === 'google' || g.id.startsWith('google-');
         const inst = instanceOf(g.id);
-        const active = layout === 'split' && (route && route.id === g.id) ? ' aria-current="true"' : '';
 
         let badge;
         let titleHtml;
@@ -660,7 +652,7 @@
           ? `<span class="sx-pill is-${esc(st.status)}">${ISSUE_PILL[st.status]}</span>` : '';
 
         return `
-          <div class="sx-item sx-sortrow${g.hidden ? ' is-hidden' : ''}" data-sort-id="${esc(g.id)}" data-nav="${esc(g.id)}" role="button" tabindex="0"${active}>
+          <div class="sx-item sx-sortrow${g.hidden ? ' is-hidden' : ''}" data-sort-id="${esc(g.id)}" data-nav="${esc(g.id)}" role="button" tabindex="0">
             ${handle(g.account_name || g.email || g.title)}
             ${badge}
             <div class="sx-item-main">
@@ -672,7 +664,6 @@
           </div>`;
       }).join('');
 
-      const isAddActive = curStr === 'add' || Boolean(route && route.kind === 'add-instance');
 
       const genSec = section('general');
       const theme = localStorage.getItem('gauge-theme') || 'auto';
@@ -698,7 +689,7 @@
             <span class="sx-eyebrow">Preferences</span>
           </div>
           <div class="sx-list">
-            <div class="sx-item" data-nav="general" role="button" tabindex="0"${curStr === 'general' ? ' aria-current="true"' : ''}>
+            <div class="sx-item" data-nav="general" role="button" tabindex="0">
               ${sourceBadge('general', null, 'sm')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>General</b></div>
@@ -707,7 +698,7 @@
               <img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" />
               ${CHEVRON}
             </div>
-            <div class="sx-item" data-nav="general/webhook" role="button" tabindex="0"${curStr === 'general/webhook' ? ' aria-current="true"' : ''}>
+            <div class="sx-item" data-nav="general/webhook" role="button" tabindex="0">
               ${sourceBadge('webhook', null, 'sm')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Notifications</b></div>
@@ -716,7 +707,7 @@
               <span class="sx-pill ${webhookOn ? 'is-ok' : 'is-muted'}">${webhookOn ? 'Active' : 'Off'}</span>
               ${CHEVRON}
             </div>
-            <div class="sx-item" data-nav="general/network" role="button" tabindex="0"${curStr === 'general/network' ? ' aria-current="true"' : ''}>
+            <div class="sx-item" data-nav="general/network" role="button" tabindex="0">
               ${sourceBadge('network', null, 'sm')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Network</b></div>
@@ -727,7 +718,7 @@
           </div>
         </section>
         <div class="sx-add-dock">
-          <button class="sx-add-cta" type="button" data-nav="add"${isAddActive ? ' aria-current="true"' : ''}>
+          <button class="sx-add-cta" type="button" data-nav="add">
             <span class="sx-add-cta-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="13" height="13">
                 <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M8 3.2v9.6M3.2 8h9.6"/>
@@ -744,20 +735,8 @@
 
     /* ---------- Level 2: Subscription Detail ---------- */
 
-    function renderSplitSubnav(id, activeKind) {
-      if (layout !== 'split') return '';
-      return `
-        <div class="sx-subnav" role="tablist">
-          <button type="button" role="tab" aria-selected="${activeKind === 'section'}" data-nav="${esc(id)}">Overview</button>
-          <button type="button" role="tab" aria-selected="${activeKind === 'connection'}" data-nav="${esc(id)}/connection">Connection &amp; Auth</button>
-          <button type="button" role="tab" aria-selected="${activeKind === 'schedule'}" data-nav="${esc(id)}/schedule">Refresh Schedule</button>
-        </div>`;
-    }
-
-    function renderHero(sec, id, st, provs) {
+    function renderHero(sec, id, st) {
       const isGoogle = id === 'google' || id.startsWith('google-');
-      const refreshBtn = layout === 'split'
-        ? `<button class="sx-btn" type="button" data-refresh="${esc(provs.join(','))}">Refresh now</button>` : '';
 
       if (isGoogle) {
         const acc = resolveGoogleAccount(id);
@@ -773,7 +752,6 @@
                 </div>
                 ${acc.email ? `<span class="sx-hero-sub">${esc(acc.email)}</span>` : ''}
               </div>
-              ${refreshBtn}
             </div>`;
         }
         return `
@@ -783,7 +761,7 @@
               <b>Google AI</b>
               <span class="sx-hero-sub">Sign in to read Antigravity quota and plan tier</span>
             </div>
-            ${opts.oauth ? `<button class="sx-btn primary" type="button" data-oauth-slot="${acc ? acc.slot : 1}">Sign in</button>` : refreshBtn}
+            <button class="sx-btn primary" type="button" data-oauth-slot="${acc ? acc.slot : 1}">Sign in</button>
           </div>`;
       }
 
@@ -800,7 +778,6 @@
             </div>
             ${sec.summary ? `<span class="sx-hero-sub">${esc(sec.summary)}</span>` : ''}
           </div>
-          ${refreshBtn}
         </div>`;
     }
 
@@ -836,7 +813,7 @@
       const st = stateForProviders(provs);
       const g = groupOf(id);
       const inst = instanceOf(id);
-      const isGoogleExtra = id.startsWith('google-') && g && g.slot > 1 && opts.oauth;
+      const isGoogleExtra = id.startsWith('google-') && g && g.slot > 1;
       const removable = isGoogleExtra || Boolean(inst);
 
       let cardsHtml = '';
@@ -929,9 +906,8 @@
       }
 
       return `
-        ${renderSplitSubnav(id, 'section')}
         <section class="sx-sec sx-sec-hero">
-          ${renderHero(sec, id, st, provs)}
+          ${renderHero(sec, id, st)}
           ${renderHealth(id, provs)}
         </section>
         ${cardsHtml}
@@ -970,9 +946,9 @@
       const gcpReady = Boolean(gcpProj && gcpProj.configured && gcpTbl && gcpTbl.configured);
 
       const googleAtMax = accounts.length >= 3;
-      const googleAction = opts.oauth && !googleAtMax
-        ? 'data-oauth-slot="next" role="button" tabindex="0"'
-        : !opts.oauth ? 'data-nav="google" role="button" tabindex="0"' : 'aria-disabled="true"';
+      const googleAction = googleAtMax
+        ? 'aria-disabled="true"'
+        : 'data-oauth-slot="next" role="button" tabindex="0"';
 
       const ccFull = ccTotalSlots >= 3 && ccPrimary;
       const odFull = odTotalSlots >= 3 && odPrimary;
@@ -983,14 +959,14 @@
         <section class="sx-sec">
           <p class="sx-lead">Connect a source or add another account.</p>
           <div class="sx-list">
-            <div class="sx-item${googleAtMax && opts.oauth ? ' is-disabled' : ''}" ${googleAction}>
+            <div class="sx-item${googleAtMax ? ' is-disabled' : ''}" ${googleAction}>
               ${sourceBadge('google', null, 'md')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google AI Account</b></div>
                 <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.google.desc)} · ${accounts.length}/3 connected</span></div>
               </div>
-              <span class="sx-pill ${googleAtMax ? 'is-muted' : 'is-accent'}">${googleAtMax ? 'Max 3' : (opts.oauth ? 'OAuth' : 'Open')}</span>
-              ${googleAtMax && opts.oauth ? '' : CHEVRON}
+              <span class="sx-pill ${googleAtMax ? 'is-muted' : 'is-accent'}">${googleAtMax ? 'Max 3' : 'OAuth'}</span>
+              ${googleAtMax ? '' : CHEVRON}
             </div>
 
             <div class="sx-item${ccFull ? ' is-disabled' : ''}" ${ccFull ? 'aria-disabled="true"' : `data-nav="${ccTarget}" role="button" tabindex="0"`}>
@@ -1223,9 +1199,7 @@
       if (!acc) return '';
       const btnText = acc.signedIn ? 'Re-authenticate' : 'Sign in with Google';
       const btnClass = acc.signedIn ? 'sx-btn' : 'sx-btn primary';
-      const action = opts.oauth
-        ? `<button class="${btnClass}" type="button" data-oauth-slot="${acc.slot}">${btnText}</button>`
-        : '';
+      const action = `<button class="${btnClass}" type="button" data-oauth-slot="${acc.slot}">${btnText}</button>`;
       return `
         <div class="sx-oauth-box">
           ${acc.signedIn ? googleAvatar(acc, null, 'md') : sourceBadge('google', null, 'md')}
@@ -1238,13 +1212,11 @@
     }
 
     function renderConnection(sec, id) {
-      const subnav = renderSplitSubnav(id, 'connection');
       const inst = instanceOf(id);
 
       // Extra Google identity (slot 2 or 3): isolated OAuth slot, no slot-1 cookies.
       if (id.startsWith('google-')) {
         return `
-          ${subnav}
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google OAuth</span></div>
             ${renderOAuthCard(id)}
@@ -1260,7 +1232,6 @@
         const chromeOn = chromeSwitch && chromeSwitch.value === 'chrome';
 
         return `
-          ${subnav}
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity OAuth</span></div>
             ${renderOAuthCard('google')}
@@ -1285,7 +1256,6 @@
         const exportFields = fields.filter((f) => exportKeys.includes(f.key));
         const authFields = fields.filter((f) => !exportKeys.includes(f.key));
         return `
-          ${subnav}
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">BigQuery export</span></div>
             <div class="sx-list">${exportFields.map(renderField).join('')}</div>
@@ -1301,7 +1271,6 @@
       // straight away when no key is stored yet so onboarding takes one step.
       const autoOpenSecret = sec.id === 'commandcode' || sec.id === 'opendesign';
       return `
-        ${subnav}
         <section class="sx-sec">
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">${inst ? 'Account credentials' : 'Credentials'}</span></div>
           <div class="sx-list">${fields.map((f) => (f.kind === 'secret' ? renderSecret(f, autoOpenSecret) : renderField(f))).join('')}</div>
@@ -1347,7 +1316,6 @@
       }).join('');
 
       return `
-        ${renderSplitSubnav(id, 'schedule')}
         <section class="sx-sec">
           <div class="sx-list">${blocks || '<div class="sx-row"><span class="sx-help">No configurable intervals for this source.</span></div>'}</div>
         </section>`;
@@ -1359,10 +1327,7 @@
       const sec = section(provider);
       const title = sec ? sec.title : provider;
       const secretField = sec && sec.fields.find((f) => f.kind === 'secret');
-      const backBtn = layout === 'split'
-        ? `<button class="sx-back-crumb" type="button" data-nav="add">‹ Add Subscription</button>` : '';
       return `
-        ${backBtn}
         <section class="sx-sec">
           <div class="sx-hero">
             ${sourceBadge(provider, null, 'lg')}
@@ -1393,11 +1358,8 @@
 
     function renderWebhook(sec) {
       const f = sec && sec.fields.find((x) => x.key === 'webhook_url');
-      const backBtn = layout === 'split'
-        ? `<button class="sx-back-crumb" type="button" data-nav="general">‹ General</button>` : '';
       if (!f) return '<p class="sx-empty">Webhook setting unavailable.</p>';
       return `
-        ${backBtn}
         <section class="sx-sec">
           <p class="sx-lead">POSTs JSON when a source changes state.</p>
           <div class="sx-list">${renderSecret(f, true)}</div>
@@ -1417,11 +1379,8 @@
 
     function renderNetwork(sec) {
       const f = sec && sec.fields.find((x) => x.key === 'proxy_url');
-      const backBtn = layout === 'split'
-        ? `<button class="sx-back-crumb" type="button" data-nav="general">‹ General</button>` : '';
-      if (!f) return `${backBtn}<p class="sx-empty">Proxy setting unavailable.</p>`;
+      if (!f) return '<p class="sx-empty">Proxy setting unavailable.</p>';
       return `
-        ${backBtn}
         <section class="sx-sec">
           <div class="sx-list">${renderField(f)}</div>
           <div class="sx-form-actions">
@@ -1538,11 +1497,7 @@
       const anim = moved && pendingDir ? ` sx-anim-${pendingDir}` : '';
       pendingDir = null;
 
-      if (layout === 'split') {
-        root.innerHTML = `
-          <nav class="sx-index">${renderIndex()}</nav>
-          <div class="sx-detail${anim}">${renderDetailView(route)}</div>`;
-      } else if (route) {
+      if (route) {
         root.innerHTML = `<div class="sx-detail${anim}">${renderDetailView(route)}</div>`;
       } else {
         root.innerHTML = `<nav class="sx-index${anim}">${renderIndex()}</nav>`;
@@ -1906,12 +1861,6 @@
         }
         return;
       }
-      if (d.refresh) {
-        t.disabled = true;
-        t.textContent = 'Refreshing…';
-        await refreshProviders(d.refresh.split(',').filter(Boolean));
-        return;
-      }
       if (d.oauthSlot) {
         startOAuth(d.oauthSlot);
         return;
@@ -1939,13 +1888,9 @@
           toast('Account removed');
           if (opts.onSaved) opts.onSaved();
           await load();
-          if (layout === 'stack') {
-            navStack = [];
-            route = null;
-            pendingDir = 'back';
-          } else {
-            route = parseRoute(inst.base);
-          }
+          navStack = [];
+          route = null;
+          pendingDir = 'back';
           confirmRemove = false;
           render();
         } catch (err) {
@@ -1961,13 +1906,9 @@
           toast('Account removed');
           if (opts.onSaved) opts.onSaved();
           await load();
-          if (layout === 'stack') {
-            navStack = [];
-            route = null;
-            pendingDir = 'back';
-          } else {
-            route = parseRoute('google');
-          }
+          navStack = [];
+          route = null;
+          pendingDir = 'back';
           confirmRemove = false;
           render();
         } catch (err) {
@@ -2061,15 +2002,8 @@
 
       try {
         const res = await api(path);
-        const popup = await openConsent(res.url);
-        if (popup === null) {
-          toast('Finish sign-in in your browser');
-        } else if (!popup) {
-          location.href = res.url;
-          return;
-        } else {
-          toast('Finish sign-in in the popup');
-        }
+        await openConsent(res.url);
+        toast('Finish sign-in in your browser');
         const hadSlot = accountsList().some((a) => a.slot === slot);
         let ticks = 0;
         const timer = setInterval(async () => {
@@ -2081,24 +2015,18 @@
             toast('Google account connected');
             return;
           }
-          if (++ticks >= 36 || (popup && popup.closed)) clearInterval(timer);
+          if (++ticks >= 36) clearInterval(timer);
         }, 2500);
       } catch (err) {
         toast(`Sign-in failed: ${err.message}`);
       }
     }
 
+    // The consent screen opens in the system browser; Google then redirects
+    // to the shell's loopback listener.
     async function openConsent(url) {
-      if (document.documentElement.dataset.shell === 'popover') {
-        try {
-          const runtime = await import('/wails/runtime.js');
-          await runtime.Browser.OpenURL(url);
-          return null;
-        } catch {
-          /* not the desktop shell; fall through to a popup */
-        }
-      }
-      return window.open(url, 'gauge-oauth', 'width=520,height=760') || undefined;
+      const runtime = await import('/wails/runtime.js');
+      await runtime.Browser.OpenURL(url);
     }
 
     return { open, back, reload: reloadSection, refreshCurrent, current: () => serializeRoute(route) };

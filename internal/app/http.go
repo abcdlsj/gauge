@@ -2,14 +2,12 @@ package app
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -194,44 +192,6 @@ func mask(v string) string {
 		return "••••"
 	}
 	return "••••" + v[len(v)-4:]
-}
-
-// requireBasicAuth wraps a handler with HTTP Basic authentication. Empty
-// credentials turn the middleware into a pass-through.
-func requireBasicAuth(next http.Handler, user, pass string) http.Handler {
-	if user == "" && pass == "" {
-		return next
-	}
-	expected := user + "\x00" + pass
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Google's redirect cannot carry Basic credentials; the OAuth state
-		// parameter protects the callback instead.
-		if r.URL.Path == "/oauth/callback" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		u, p, ok := r.BasicAuth()
-		got := u + "\x00" + p
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Gauge", charset="UTF-8"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// isLoopback reports whether the listen address only accepts local traffic.
-func isLoopback(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	if host == "" || host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
 }
 
 // writeJSON encodes v with the standard content type.

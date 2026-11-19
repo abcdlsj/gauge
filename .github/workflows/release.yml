@@ -50,28 +50,9 @@ jobs:
           path: build/dist/Gauge-*-macos-universal.*
           if-no-files-found: error
 
-  server:
-    name: headless builds
-    needs: check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - run: make server-dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: headless
-          path: build/dist/gauge-*
-          if-no-files-found: error
-
   publish:
     name: publish ${{ github.ref_name }}
-    needs: [app, server]
+    needs: [app]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

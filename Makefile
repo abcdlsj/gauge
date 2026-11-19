@@ -1,10 +1,8 @@
-BINARY  := gauge
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 # User-facing version: v0.2.0-3-gabc1234-dirty -> 0.2.0
 SEMVER  := $(or $(shell printf '%s' '$(VERSION)' | sed -nE 's/^v?([0-9]+(\.[0-9]+)*).*/\1/p'), 0.0.0)
 # Monotonic CFBundleVersion; git describe alone is not ordered.
 BUILDNUM := $(or $(shell git rev-list --count HEAD 2>/dev/null), 1)
-LDFLAGS := -s -w -X main.version=$(VERSION)
 DESKTOP_LDFLAGS := -s -w -X main.version=$(VERSION)
 
 DIST    := build/dist
@@ -14,16 +12,7 @@ APKZIP  := $(DIST)/Gauge-$(SEMVER)-macos-universal.zip
 DMGROOT := build/dmg
 APKDMG  := $(DIST)/Gauge-$(SEMVER)-macos-universal.dmg
 
-# Headless builds. Windows only differs by the .exe suffix.
-SERVER_TARGETS := linux/amd64 linux/arm64 windows/amd64 windows/arm64
-
-.PHONY: build run test vet fmt tidy clean size docker icons app run-app dist server-dist version-check dmg
-
-build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/gauge-server
-
-run:
-	go run ./cmd/gauge-server
+.PHONY: test vet fmt tidy clean icons app run-app dist version-check dmg
 
 test:
 	go test ./...
@@ -36,9 +25,6 @@ fmt:
 
 tidy:
 	go mod tidy
-
-size: build
-	@ls -lh bin/$(BINARY) | awk '{print $$5, $$9}'
 
 # macOS .app bundle, universal (arm64 + amd64). Both slices are built with cgo
 # because the Wails tray/webview path wants the platform frameworks; lipo
@@ -90,26 +76,12 @@ dmg: app
 	@rm -rf "$(DMGROOT)"
 	@echo "built $(APKDMG) ($$(du -h "$(APKDMG)" | cut -f1))"
 
-# Release assets: the disk image, the zipped bundle and the headless server.
+# Release assets: the disk image and the zipped bundle.
 dist: app dmg
 	@mkdir -p "$(DIST)"
 	@rm -f "$(APKZIP)"
 	@ditto -c -k --keepParent "$(APP)" "$(APKZIP)"
 	@echo "built $(APKZIP)"
-
-server-dist:
-	@mkdir -p "$(DIST)"
-	@set -e; for t in $(SERVER_TARGETS); do \
-		os=$${t%/*}; arch=$${t#*/}; ext=""; \
-		if [ "$$os" = windows ]; then ext=.exe; fi; \
-		out="$(DIST)/$(BINARY)-$(SEMVER)-$$os-$$arch$$ext"; \
-		echo "building $$out"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath \
-			-ldflags="$(LDFLAGS)" -o "$$out" ./cmd/gauge-server; \
-	done
-
-docker:
-	docker build -t gauge:$(VERSION) .
 
 # Everything that names a version must agree with the tag. The release workflow
 # runs this before it builds anything; locally, `make version-check VERSION=v0.2.0`
@@ -125,4 +97,4 @@ version-check:
 		echo "version $$v is consistent in the files (no tag v$$v yet)"
 
 clean:
-	rm -rf bin build/dist build/dmg
+	rm -rf build/dist build/dmg

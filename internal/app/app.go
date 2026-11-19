@@ -1,5 +1,5 @@
-// Package app wires the store, providers and HTTP surface together so the same
-// dashboard can run as a CLI server or inside a desktop shell.
+// Package app wires the store, providers and HTTP surface together for the
+// menubar shell, which serves the handler in-process.
 package app
 
 import (
@@ -18,11 +18,9 @@ import (
 
 // Config describes one instance of the dashboard.
 type Config struct {
-	DBPath   string
-	KeyPath  string
-	Logger   *log.Logger
-	AuthUser string
-	AuthPass string
+	DBPath  string
+	KeyPath string
+	Logger  *log.Logger
 	// Version is the build version (e.g. "v0.3.1" or "dev") used by the
 	// background update checker.
 	Version string
@@ -32,9 +30,6 @@ type Config struct {
 	// OnQuit triggers graceful shutdown of the host shell (e.g. ui.Quit) right
 	// before an update swaps the app bundle.
 	OnQuit func()
-	// AllowEmbedding relaxes frame protection for the desktop shell, which
-	// renders the panel inside the app window.
-	AllowEmbedding bool
 	// OnSettingsChange, when set, runs after settings are saved or cleared.
 	// changed maps each key to its new value; "" means it was cleared and is
 	// back to its default.
@@ -126,10 +121,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("DELETE /api/accounts/{slot}", s.handleDeleteAccount)
 	mux.HandleFunc("POST /api/instances/{provider}", s.handleInstance)
 	mux.HandleFunc("DELETE /api/instances/{provider}/{slot}", s.handleDeleteInstance)
-	mux.HandleFunc("GET /oauth/callback", broker.handleCallback)
-	// The desktop shell redirects to the path Antigravity's own client
-	// whitelists (/oauth-callback) because Google matches redirect URIs
-	// exactly. The web build keeps the documented /oauth/callback.
+	// The shell redirects to the path Antigravity's own client whitelists
+	// (/oauth-callback) because Google matches redirect URIs exactly.
 	mux.HandleFunc("GET /oauth-callback", broker.handleCallback)
 	mux.HandleFunc("GET /mark.svg", s.handleMark)
 	mux.HandleFunc("GET /popover", func(w http.ResponseWriter, r *http.Request) {
@@ -142,19 +135,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(raw)
 	})
-	mux.HandleFunc("GET /desktop", func(w http.ResponseWriter, r *http.Request) {
-		raw, err := web.FS.ReadFile("shell.html")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(raw)
-	})
 	mux.Handle("GET /", noCache(http.FileServer(http.FS(web.FS))))
 
-	handler := requireBasicAuth(securityHeaders(logRequests(mux, cfg.Logger), cfg.AllowEmbedding), cfg.AuthUser, cfg.AuthPass)
+	handler := securityHeaders(logRequests(mux, cfg.Logger))
 
 	return &App{Store: st, Engine: eng, Updater: upd, Handler: handler, log: cfg.Logger}, nil
 }
@@ -163,17 +146,12 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 func (a *App) Close() error { return a.Store.Close() }
 
 // securityHeaders adds conservative defaults; the panel loads no third-party
-// resources, so the CSP can stay strict.
-func securityHeaders(next http.Handler, allowEmbedding bool) http.Handler {
-	csp := "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self'; frame-ancestors 'none'"
-	if allowEmbedding {
-		csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self'"
-	}
+// resources, so the CSP can stay strict. It sets no frame-ancestors or
+// X-Frame-Options: the shell renders the panel inside its own webview.
+func securityHeaders(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.googleusercontent.com; connect-src 'self'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		if !allowEmbedding {
-			w.Header().Set("X-Frame-Options", "DENY")
-		}
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)

@@ -39,7 +39,6 @@ type pendingAuth struct {
 	verifier string
 	redirect string
 	slot     int
-	back     string
 	expires  time.Time
 }
 
@@ -85,13 +84,7 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.Atoi(r.URL.Query().Get("slot")); err == nil && v >= 1 && v <= 3 {
 		slot = v
 	}
-	// back is where the browser lands once the code is exchanged. The desktop
-	// shell has no page behind the popover, so it asks for a plain result page.
-	back := "/settings.html#google"
-	if r.URL.Query().Get("back") == "none" {
-		back = ""
-	}
-	b.pending[state] = pendingAuth{verifier: verifier, redirect: redirect, slot: slot, back: back, expires: time.Now().Add(oauthStateTTL)}
+	b.pending[state] = pendingAuth{verifier: verifier, redirect: redirect, slot: slot, expires: time.Now().Add(oauthStateTTL)}
 	b.mu.Unlock()
 
 	params := url.Values{}
@@ -110,16 +103,6 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// fallbackBack returns where an error page without a pending state should go:
-// the desktop loopback server only serves /oauth-callback, so bouncing there
-// would land on a 404.
-func fallbackBack(r *http.Request) string {
-	if r.URL.Path == "/oauth-callback" {
-		return ""
-	}
-	return "/settings.html#google"
-}
-
 // handleCallback exchanges the authorization code and stores the refresh token.
 func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
@@ -130,28 +113,23 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	delete(b.pending, state)
 	b.mu.Unlock()
 
-	back := fallbackBack(r)
-	if ok {
-		back = p.back
-	}
-
 	if errParam := query.Get("error"); errParam != "" {
 		msg := "Authorization failed: " + errParam
 		if errParam == "access_denied" {
 			msg = "Sign-in was cancelled. You can close this tab and try again from Gauge."
 		}
-		renderCallback(w, false, msg, back)
+		renderCallback(w, false, msg)
 		return
 	}
 
 	code := query.Get("code")
 
 	if !ok || time.Now().After(p.expires) {
-		renderCallback(w, false, "This sign-in link expired. Start again from Gauge.", back)
+		renderCallback(w, false, "This sign-in link expired. Start again from Gauge.")
 		return
 	}
 	if code == "" {
-		renderCallback(w, false, "Google did not return an authorization code.", p.back)
+		renderCallback(w, false, "Google did not return an authorization code.")
 		return
 	}
 
@@ -161,7 +139,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	refresh, access, err := b.exchange(ctx, code, p)
 	if err != nil {
 		b.log.Printf("oauth: exchange failed: %v", err)
-		renderCallback(w, false, "Token exchange failed: "+err.Error(), p.back)
+		renderCallback(w, false, "Token exchange failed: "+err.Error())
 		return
 	}
 
@@ -170,7 +148,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 		key = fmt.Sprintf("antigravity_refresh_token_%d", p.slot)
 	}
 	if err := b.store.Set(ctx, key, refresh); err != nil {
-		renderCallback(w, false, "Could not store the credential: "+err.Error(), p.back)
+		renderCallback(w, false, "Could not store the credential: "+err.Error())
 		return
 	}
 	if account, err := b.userInfo(ctx, access); err == nil {
@@ -185,11 +163,7 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// it runs the account cache still lists only the old identities.
 	go b.engine.RunOnce(context.Background(), "antigravity", true)
 	b.log.Println("oauth: Antigravity account connected")
-	doneMsg := "Account connected. Returning to Gauge…"
-	if p.back == "" {
-		doneMsg = "Account connected. You can close this tab and return to Gauge in the menu bar."
-	}
-	renderCallback(w, true, doneMsg, p.back)
+	renderCallback(w, true, "Account connected. You can close this tab and return to Gauge in the menu bar.")
 }
 
 // exchange trades the authorization code for a refresh token.
@@ -268,7 +242,7 @@ func callbackURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host + "/oauth/callback"
+	return scheme + "://" + r.Host + "/oauth-callback"
 }
 
 // oauthClient resolves the OAuth client used for the sign-in flow.
@@ -298,10 +272,9 @@ func randomToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
-// renderCallback shows a minimal result page and, when back is set, bounces
-// back to the panel. The desktop shell passes an empty back: there is no page
-// behind the popover to return to.
-func renderCallback(w http.ResponseWriter, ok bool, message, back string) {
+// renderCallback shows a minimal result page. It never navigates anywhere:
+// there is no page behind the popover to return to.
+func renderCallback(w http.ResponseWriter, ok bool, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	title := "Connected"
 	color := "#12805c"
@@ -309,13 +282,9 @@ func renderCallback(w http.ResponseWriter, ok bool, message, back string) {
 		title = "Sign-in failed"
 		color = "#c8403a"
 	}
-	refresh := ""
-	if back != "" {
-		refresh = fmt.Sprintf(`<meta http-equiv="refresh" content="2;url=%s">`, back)
-	}
 	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gauge · %s</title>%s
+<title>Gauge · %s</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f7f4;color:#17191d;
 font:15px/1.5 "Avenir Next",Avenir,-apple-system,sans-serif}
@@ -325,5 +294,5 @@ p{margin:0;color:#71767e;font-size:13px}
 @media (prefers-color-scheme:dark){body{background:#0b0c0e;color:#e9eaec}.card{background:#131519}
 p{color:#8c919a}}
 </style></head><body><div class="card"><h1>%s</h1><p>%s</p></div></body></html>`,
-		title, refresh, color, title, html.EscapeString(message))
+		title, color, title, html.EscapeString(message))
 }

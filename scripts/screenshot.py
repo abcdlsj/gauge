@@ -372,7 +372,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
         match path:
-            case "/popover.html" | "/settings.html" | "/index.html":
+            case "/popover.html":
                 self._send(inject_fixture((WEB / path.lstrip("/")).read_text()).encode(),
                            "text/html; charset=utf-8")
             case "/api/overview":
@@ -553,10 +553,6 @@ def main() -> None:
         popover_shot(httpd, f"{base}/popover.html?settings=google/schedule&theme=light", OUT / "popover-settings-schedule.png")
         popover_shot(httpd, f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png")
         popover_shot(httpd, f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png")
-        shot(f"{base}/settings.html?theme=light#general", OUT / "web-settings-general.png", 1100, 700, 1)
-        shot(f"{base}/settings.html?theme=light#google", OUT / "web-settings.png", 1100, 1200, 1)
-        shot(f"{base}/index.html?theme=light#/overview", OUT / "web-overview.png", 1100, 1300, 1)
-        shot(f"{base}/index.html?theme=dark#/source/google", OUT / "web-source.png", 1100, 900, 1)
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 900, 536)
         httpd.shutdown()
@@ -576,10 +572,6 @@ def main() -> None:
         "popover-settings-schedule.png",
         "popover-settings-webhook.png",
         "popover-settings-add-instance.png",
-        "web-settings-general.png",
-        "web-settings.png",
-        "web-overview.png",
-        "web-source.png",
         "app-icon.png",
         "tray-icon-readability.png",
     ):

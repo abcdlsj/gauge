@@ -14,8 +14,7 @@ units, Flow video credits.
 
 Collectors poll upstream on a quiet schedule and write snapshots to an embedded
 SQLite file; the UI only reads local data, so the popover opens instantly and
-never triggers extra billing or rate limits. A headless HTTP build serves the
-same UI for a server or a container.
+never triggers extra billing or rate limits.
 
 ## Install
 
@@ -29,8 +28,7 @@ xattr -dr com.apple.quarantine /Applications/Gauge.app
 ```
 
 Requires macOS 13+. The image carries one universal bundle (Apple Silicon and
-Intel); a `.zip` of the same bundle and the headless binaries for Linux and
-Windows sit next to it in the same release.
+Intel); a `.zip` of the same bundle sits next to it in the same release.
 
 ## Where the data lives
 
@@ -38,7 +36,6 @@ Windows sit next to it in the same release.
 | --- | --- |
 | Database | `~/Library/Application Support/Gauge/quota.db` (+ `-wal`, `-shm`) |
 | Encryption key | `~/Library/Application Support/Gauge/gauge.key` (0600, AES-GCM) |
-| Headless build | `-db` / `GAUGE_DB`, key defaults to `gauge.key` next to it |
 
 Everything Gauge produces stays in that folder: quota snapshots, run state, an
 activity log, and settings — anything token-, cookie- or secret-shaped is
@@ -74,7 +71,7 @@ most one extra day of partitions.
 
 | | **Gauge** | [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) | [antigravity-panel](https://github.com/n2ns/antigravity-panel) | [AntigravityQuotaWatcher](https://github.com/wusimpl/AntigravityQuotaWatcher) |
 | --- | --- | --- | --- | --- |
-| Shape | menu bar app + headless HTTP build | desktop account manager | in-IDE panel | IDE extension |
+| Shape | menu bar app | desktop account manager | in-IDE panel | IDE extension |
 | Focus | quota **and money**, all sources in one place | adding / switching / rotating accounts | IDE quota plus usage trends | IDE quota display |
 | Antigravity quota | yes | yes | yes | yes |
 | Spend / billing | BigQuery credits, CLI calls, Colab CU, Flow credits | no | no | no |
@@ -156,8 +153,7 @@ account's plan) holds the Antigravity Gemini and Claude pools, Flow credits and
 Colab compute units; Command Code, Open Design and Google Cloud are groups of
 their own. In Settings, drag subscriptions (and the cards inside one) to set
 the menu-bar order, and switch either level off. The layout is stored as
-`display_layout` and also drives the web Overview; the web build adds one tab
-per subscription with all of its cards.
+`display_layout`.
 
 ## Build from source
 
@@ -165,10 +161,8 @@ per subscription with all of its cards.
 make app           # build/bin/Gauge.app — universal, needs macOS + Xcode CLT
 make dmg           # build/dist/Gauge-<version>-macos-universal.dmg
 make dist          # the .dmg plus the .zip
-make server-dist   # headless binaries for linux/windows, amd64 + arm64
 make run-app
 make test          # go test ./...
-make build         # headless binary only, CGO-free
 ```
 
 The icon comes from `scripts/make_icons.py` — one geometry in SVG that also
@@ -190,45 +184,22 @@ git commit -am "release: 0.2.0"
 git tag v0.2.0 && git push origin main v0.2.0
 ```
 
-`.github/workflows/release.yml` builds the universal app and the headless
-binaries, writes `SHA256SUMS.txt`, and creates the GitHub release with generated
-notes. `.github/workflows/ci.yml` runs gofmt/vet/tests on Linux and macOS plus
-both build jobs on every push.
+`.github/workflows/release.yml` builds the universal app, writes
+`SHA256SUMS.txt`, and creates the GitHub release with generated notes.
+`.github/workflows/ci.yml` runs gofmt/vet/tests on Linux and macOS plus the app
+build on every push.
 
-Only the macOS app is a first-class target. The menu-bar popover, the template
-icons and the Chrome cookie decryption (macOS keychain) are macOS-specific;
-elsewhere `internal/browsercookie` reports `unavailable`, so the Colab and Flow
-collectors stay `unconfigured` and the headless server serves everything else.
+Gauge is macOS-only: the menu-bar popover, the template icons and the Chrome
+cookie decryption (macOS keychain) are macOS-specific.
 
 ```
 cmd/gauge          Wails menu-bar shell
-cmd/gauge-server   headless HTTP entrypoint
-internal/app       wiring: store, engine, routes, auth
+internal/app       wiring: store, engine, routes, OAuth
 internal/store     SQLite snapshots, run state, events, encrypted settings
 internal/engine    per-provider scheduling, cooldown, alert webhook
 internal/providers antigravity · gcp-billing · gcp-monitoring · colab · flow
 internal/browsercookie  read (and decrypt) cookies from the local Chrome profile
-web                index.html · app.css · app.js (no framework)
+web                popover.html · popover.js · settings-ui.js (no framework)
 ```
 
-## Headless / environment
-
-```sh
-./gauge -db /var/lib/gauge/quota.db -addr 127.0.0.1:8090
-```
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `GAUGE_ADDR` | `127.0.0.1:8090` | listen address |
-| `GAUGE_DB` | `quota.db` | SQLite file |
-| `GAUGE_KEY` | `<db dir>/gauge.key` | encryption key file |
-| `GAUGE_SECRET_KEY` | — | passphrase instead of a key file |
-| `GAUGE_AUTH` | — | `user:password` for HTTP Basic auth |
-| `GAUGE_ALLOW_PUBLIC` | — | `1` allows a non-loopback bind without auth |
-
-Routes: `GET /api/overview`, `GET /api/quotas`, `GET|POST /api/settings`,
-`POST /api/refresh/{provider}` (60 s cooldown), `POST /api/refresh-all`,
-`GET /api/oauth/start`, `GET /oauth/callback`, `GET /api/proxy`,
-`POST /api/proxy/test`, `GET /api/health`.
-
-The page loads no third-party assets; the CSP is `default-src 'self'`.
+The popover loads no third-party assets; the CSP is `default-src 'self'`.

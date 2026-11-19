@@ -71,7 +71,6 @@ func main() {
 				ui.Quit()
 			}
 		},
-		AllowEmbedding: true,
 		OnSettingsChange: func(changed map[string]string) {
 			if choice, ok := changed[app.IconSetting]; ok && tray != nil {
 				tray.SetTemplateIcon(trayIconFor(choice))
@@ -141,7 +140,7 @@ func main() {
 	const oauthCallbackPath = "/oauth-callback"
 	oauthSrv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Antigravity's client whitelists the loopback path its own IDE uses
-		// (/oauth-callback), so the redirect must hit that one, not /oauth/callback.
+		// (/oauth-callback), so the redirect must hit that one.
 		if r.URL.Path != oauthCallbackPath {
 			http.NotFound(w, r)
 			return
@@ -161,11 +160,9 @@ func main() {
 			return
 		case r.URL.Path == "/api/oauth/start":
 			// Send the consent screen to the loopback listener; the panel has
-			// no page Google could redirect to. back=none keeps the result
-			// page from navigating to a web route the app does not serve.
+			// no page Google could redirect to.
 			q := r.URL.Query()
 			q.Set("redirect", oauthBase+oauthCallbackPath)
-			q.Set("back", "none")
 			r.URL.RawQuery = q.Encode()
 		}
 		a.Handler.ServeHTTP(w, r)

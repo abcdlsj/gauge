@@ -431,10 +431,6 @@ async function load() {
 const settingsUI = GaugeSettings.create({
   root: $('#settings-root'),
   scroller: $('#settings-root'),
-  layout: 'stack',
-  // The menubar popover can add and remove Google accounts too; the consent
-  // step hands off to the system browser (see settings-ui.js).
-  oauth: true,
   toast,
   onNavigate(meta) {
     const m = typeof meta === 'string' ? { title: meta || 'Settings', depth: meta ? 1 : 0 } : (meta || { depth: 0, title: 'Settings' });
