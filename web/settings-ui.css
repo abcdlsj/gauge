@@ -180,6 +180,10 @@
 .sx-item.is-disabled { opacity: 0.52; cursor: default; }
 .sx-item.is-disabled:hover { background: transparent; }
 
+/* A read-only row (the About version): same geometry, no affordance. */
+.sx-item.sx-item-static { cursor: default; }
+.sx-item.sx-item-static:hover { background: transparent; }
+
 .sx-item-main {
   flex: 1;
   min-width: 0;

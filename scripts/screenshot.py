@@ -148,6 +148,12 @@ def fixture_overview() -> dict:
     }
 
 
+def fixture_update() -> dict:
+    """The /api/update shape: the running build, up to date."""
+    return {"current": "0.4.0", "latest": "0.4.0", "available": False,
+            "state": "idle", "progress": 0, "can_apply": False}
+
+
 def fixture_settings() -> dict:
     """The /api/settings shape: one section per source, plus General."""
     def field(key, label, kind, value=None, **extra):
@@ -326,6 +332,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._send_json(fixture_overview())
             case "/api/settings":
                 self._send_json(fixture_settings())
+            case "/api/update":
+                self._send_json(fixture_update())
             case "/icon/preview.html":
                 self._send(ICON_PREVIEW.encode(), "text/html; charset=utf-8")
             case "/icon/AppIcon.png":

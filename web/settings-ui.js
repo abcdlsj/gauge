@@ -160,6 +160,8 @@
 
     let sections = [];
     let overview = null;
+    let appVersion = ''; // reported by /api/update, i.e. the tag users see
+    let appUpdate = ''; // newer release, when one is listed
     let route = null; // parsed route object, or null for Level 1 index
     let navStack = []; // serialized routes for stack back()
     let editing = null; // secret key currently being edited
@@ -181,12 +183,15 @@
     }, true);
 
     async function load() {
-      const [settings, ov] = await Promise.all([
+      const [settings, ov, upd] = await Promise.all([
         api('/api/settings'),
         api('/api/overview').catch(() => null),
+        api('/api/update').catch(() => null),
       ]);
       sections = settings.sections || [];
       overview = ov;
+      appVersion = (upd && upd.current) || '';
+      appUpdate = upd && upd.available ? String(upd.latest || '') : '';
     }
 
     function section(id) {
@@ -1097,7 +1102,21 @@
               ${CHEVRON}
             </div>
           </div>
-        </section>`;
+        </section>
+        ${appVersion ? `
+        <section class="sx-sec">
+          <div class="sx-eyebrow-bar"><span class="sx-eyebrow">About</span></div>
+          <div class="sx-list">
+            <div class="sx-item sx-item-static">
+              <img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" />
+              <div class="sx-item-main">
+                <div class="sx-item-top"><b>Gauge</b></div>
+                <div class="sx-item-sub"><span class="sx-sub-dim">${appUpdate ? `Release ${esc(appUpdate)} available` : 'Up to date'}</span></div>
+              </div>
+              <span class="sx-pill ${appUpdate ? 'is-accent' : 'is-muted'}">${esc(appVersion)}</span>
+            </div>
+          </div>
+        </section>` : ''}`;
     }
 
     // proxySummary names the route in one line for the General and index rows.
