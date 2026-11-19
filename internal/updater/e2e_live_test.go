@@ -61,4 +61,8 @@ func TestLiveUpdateBootstrapsCopy(t *testing.T) {
 	if st.State != StateInstalling {
 		t.Fatalf("apply did not reach installing: %+v", st)
 	}
+	// The helper swaps after this process exits, so the verdict is read from
+	// the bundle afterwards -- by version, the only thing users see:
+	//   PlistBuddy -c "Print :CFBundleShortVersionString" <target>/Contents/Info.plist
+	t.Logf("post-swap check: %s should report %s", target, st.Latest)
 }
