@@ -50,6 +50,7 @@ func main() {
 		DBPath:   *dbPath,
 		KeyPath:  *keyPath,
 		Logger:   logger,
+		Version:  version,
 		AuthUser: user,
 		AuthPass: pass,
 	})
@@ -59,6 +60,7 @@ func main() {
 	defer a.Close()
 
 	a.Engine.Start(ctx)
+	a.Updater.Start(ctx)
 
 	srv := &http.Server{
 		Addr:              *addr,

@@ -12,6 +12,7 @@ import (
 	"github.com/abcdlsj/gauge/internal/engine"
 	"github.com/abcdlsj/gauge/internal/providers"
 	"github.com/abcdlsj/gauge/internal/store"
+	"github.com/abcdlsj/gauge/internal/updater"
 	"github.com/abcdlsj/gauge/web"
 )
 
@@ -22,6 +23,15 @@ type Config struct {
 	Logger   *log.Logger
 	AuthUser string
 	AuthPass string
+	// Version is the build version (e.g. "v0.3.1" or "dev") used by the
+	// background update checker.
+	Version string
+	// EnableAutoUpdate enables in-place download and silent restart on
+	// supported desktop bundles.
+	EnableAutoUpdate bool
+	// OnQuit triggers graceful shutdown of the host shell (e.g. ui.Quit) right
+	// before an update swaps the app bundle.
+	OnQuit func()
 	// AllowEmbedding relaxes frame protection for the desktop shell, which
 	// renders the panel inside the app window.
 	AllowEmbedding bool
@@ -35,6 +45,7 @@ type Config struct {
 type App struct {
 	Store   *store.Store
 	Engine  *engine.Engine
+	Updater *updater.Manager
 	Handler http.Handler
 
 	log *log.Logger
@@ -68,9 +79,18 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		providers.OpenDesign{},
 	}, cfg.Logger)
 
+	upd := updater.New(updater.Config{
+		CurrentVersion: cfg.Version,
+		ClientFactory:  deps.Proxy.Client,
+		Logger:         cfg.Logger,
+		OnQuit:         cfg.OnQuit,
+		EnableApply:    cfg.EnableAutoUpdate,
+	})
+
 	s := &Server{
 		store:    st,
 		engine:   eng,
+		updater:  upd,
 		proxy:    deps.Proxy,
 		client:   deps.Proxy.Client(20 * time.Second),
 		log:      cfg.Logger,
@@ -96,6 +116,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("POST /api/refresh-all", s.handleRefreshAll)
 	mux.HandleFunc("POST /api/refresh/{provider}", s.handleRefresh)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/update", s.handleUpdate)
+	mux.HandleFunc("POST /api/update/check", s.handleUpdateCheck)
+	mux.HandleFunc("POST /api/update/apply", s.handleUpdateApply)
 	mux.HandleFunc("GET /api/proxy", s.handleProxy)
 	mux.HandleFunc("POST /api/proxy/test", s.handleProxyTest)
 	mux.HandleFunc("GET /api/avatar/{slot}", s.handleAvatar)
@@ -133,7 +156,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 	handler := requireBasicAuth(securityHeaders(logRequests(mux, cfg.Logger), cfg.AllowEmbedding), cfg.AuthUser, cfg.AuthPass)
 
-	return &App{Store: st, Engine: eng, Handler: handler, log: cfg.Logger}, nil
+	return &App{Store: st, Engine: eng, Updater: upd, Handler: handler, log: cfg.Logger}, nil
 }
 
 // Close releases the database.

@@ -104,6 +104,31 @@ html[data-shell="popover"].is-measuring .scroll-area {
 }
 .pop-btn:hover { background: var(--surface-2); color: var(--text); }
 
+/* Tiny inline update pill next to the brand name; hidden when up to date. */
+.upd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.upd-pill:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.upd-pill:active { transform: scale(0.96); }
+.upd-pill.is-busy { cursor: default; }
+.upd-pill.is-busy:active { transform: none; }
+
 /* ---------- sources ---------- */
 
 /* Each source is one block; blocks stack top to bottom. */

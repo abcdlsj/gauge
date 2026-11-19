@@ -19,6 +19,7 @@ import (
 	"github.com/abcdlsj/gauge/internal/engine"
 	"github.com/abcdlsj/gauge/internal/providers"
 	"github.com/abcdlsj/gauge/internal/store"
+	"github.com/abcdlsj/gauge/internal/updater"
 )
 
 // fieldDef describes one credential/setting input rendered by the panel.
@@ -242,9 +243,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // api bundles the dependencies shared by the HTTP handlers.
 type Server struct {
-	store  *store.Store
-	engine *engine.Engine
-	proxy  *providers.Proxy
+	store   *store.Store
+	engine  *engine.Engine
+	updater *updater.Manager
+	proxy   *providers.Proxy
 	// client follows the proxy setting; used for avatar fetches and the proxy
 	// probe.
 	client *http.Client
@@ -716,4 +718,35 @@ func (a *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"quotas":     len(ov.Quotas),
 		"runs":       ov.Runs,
 	})
+}
+
+// handleUpdate returns the cached auto-update state without hitting GitHub.
+func (a *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if a.updater == nil {
+		writeJSON(w, http.StatusOK, updater.Status{State: updater.StateIdle})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.updater.Status())
+}
+
+// handleUpdateCheck triggers an immediate GitHub release check (subject to cooldown).
+func (a *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	if a.updater == nil {
+		writeJSON(w, http.StatusOK, updater.Status{State: updater.StateIdle})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.updater.CheckManual(r.Context()))
+}
+
+// handleUpdateApply starts the background download, verification, and silent restart.
+func (a *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
+	if a.updater == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "updater unavailable"})
+		return
+	}
+	if err := a.updater.Apply(); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, a.updater.Status())
 }

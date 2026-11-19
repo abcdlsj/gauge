@@ -645,6 +645,85 @@ if (typeof ResizeObserver === 'function') {
   [$('#pop-body'), $('#settings-root')].forEach((el) => { if (el) observer.observe(el); });
 }
 
+/* ---------- auto-update ---------- */
+
+let updateState = null;
+let updatePollTimer = null;
+let lastUpdateErr = '';
+
+function renderUpdatePill(u) {
+  const pill = $('#update-pill');
+  if (!pill) return;
+
+  const show = Boolean(u && (u.available || u.state === 'downloading' || u.state === 'installing'));
+  pill.hidden = !show;
+  if (!show) return;
+
+  const busy = u.state === 'downloading' || u.state === 'installing';
+  pill.classList.toggle('is-busy', busy);
+  pill.disabled = busy;
+
+  if (u.state === 'downloading') {
+    const pct = Math.max(0, Math.min(99, Number(u.progress) || 0));
+    pill.textContent = `↓ ${pct}%`;
+    pill.title = `Downloading v${u.latest} (${pct}%)`;
+  } else if (u.state === 'installing') {
+    pill.textContent = 'restarting…';
+    pill.title = `Installing v${u.latest} and restarting…`;
+  } else {
+    pill.textContent = `↑ ${u.latest}`;
+    pill.title = u.can_apply
+      ? `Update to v${u.latest} — click to download & restart`
+      : `v${u.latest} available — click to open GitHub release`;
+  }
+  pill.setAttribute('aria-label', pill.title);
+
+  if (u.state === 'error' && u.error && u.error !== lastUpdateErr) {
+    lastUpdateErr = u.error;
+    toast(`Update failed: ${u.error}`);
+  } else if (u.state !== 'error') {
+    lastUpdateErr = '';
+  }
+}
+
+function scheduleUpdatePoll(fast) {
+  clearTimeout(updatePollTimer);
+  updatePollTimer = setTimeout(pollUpdate, fast ? 450 : 60000);
+}
+
+async function pollUpdate() {
+  try {
+    const u = await api('/api/update');
+    updateState = u;
+    renderUpdatePill(u);
+    const busy = u && (u.state === 'downloading' || u.state === 'installing');
+    scheduleUpdatePoll(busy);
+  } catch {
+    scheduleUpdatePoll(false);
+  }
+}
+
+$('#update-pill')?.addEventListener('click', async () => {
+  const u = updateState;
+  if (!u || !u.available) return;
+  if (u.state === 'downloading' || u.state === 'installing') return;
+
+  if (!u.can_apply) {
+    if (u.release_url) window.open(u.release_url, '_blank', 'noopener');
+    return;
+  }
+
+  try {
+    lastUpdateErr = '';
+    const next = await api('/api/update/apply', { method: 'POST' });
+    updateState = next;
+    renderUpdatePill(next);
+    scheduleUpdatePoll(true);
+  } catch (err) {
+    toast(`Update failed: ${err.message}`);
+  }
+});
+
 paintThemeButton(currentTheme);
 // ?settings=1 opens the settings index, ?settings=<section> one section
 // (screenshots and links use it).
@@ -654,6 +733,7 @@ if (settingsParam) {
   openSettings(settingsParam === '1' ? undefined : settingsParam);
 }
 load();
+pollUpdate();
 setInterval(load, 20000);
 setInterval(refreshTickers, 1000);
 // Showing the popover re-measures: the first paint happens while the window is
@@ -661,6 +741,7 @@ setInterval(refreshTickers, 1000);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   load();
+  pollUpdate();
   if (document.body.classList.contains('settings-open')) settingsUI.reload();
   fitWindow();
 });
