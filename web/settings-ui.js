@@ -5,7 +5,7 @@
 // borderless instrument aesthetic:
 //   Level 1: Subscriptions + Preferences index
 //   Level 2: Subscription detail (cards, health, drill-downs), Add Subscription, General
-//   Level 3: Connection & Auth, Refresh Schedule, New Account, Alert Webhook
+//   Level 3: Connection & Auth, Refresh Schedule, New Account, Notifications
 
 (function () {
   const esc = (v) =>
@@ -344,10 +344,10 @@
       if (r.kind === 'add') return { depth: 1, title: 'Add Subscription', parent: 'Settings', providers: [] };
       if (r.kind === 'add-instance') {
         const sec = section(r.id);
-        return { depth: 2, title: `New ${sec ? sec.title : r.id}`, parent: 'Add Subscription', providers: [] };
+        return { depth: 2, title: `New ${sec ? sec.title : r.id} Account`, parent: 'Add Subscription', providers: [] };
       }
       if (r.kind === 'general') return { depth: 1, title: 'General', parent: 'Settings', providers: [] };
-      if (r.kind === 'webhook') return { depth: 2, title: 'Alert Webhook', parent: 'General', providers: [] };
+      if (r.kind === 'webhook') return { depth: 2, title: 'Notifications', parent: 'General', providers: [] };
       if (r.kind === 'network') return { depth: 2, title: 'Network', parent: 'General', providers: [] };
       const sec = section(r.id);
       const secTitle = titleFor(sec, r.id) || r.id;
@@ -701,7 +701,7 @@
             <div class="sx-item" data-nav="general" role="button" tabindex="0"${curStr === 'general' ? ' aria-current="true"' : ''}>
               ${sourceBadge('general', null, 'sm')}
               <div class="sx-item-main">
-                <div class="sx-item-top"><b>Appearance</b></div>
+                <div class="sx-item-top"><b>General</b></div>
                 <div class="sx-item-sub"><span class="sx-sub-dim">${esc(themeLabel)} theme · ${esc(iconLabel)} mark</span></div>
               </div>
               <img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" />
@@ -734,7 +734,7 @@
               </svg>
             </span>
             <span class="sx-add-cta-text">
-              <b>Add subscription</b>
+              <b>Add Subscription</b>
               <span>Google AI · Command Code · Open Design · GCP</span>
             </span>
             ${CHEVRON}
