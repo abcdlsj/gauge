@@ -22,9 +22,16 @@ func TestLiveUpdateBootstrapsCopy(t *testing.T) {
 		t.Fatal("GAUGE_E2E_TARGET_APP is required")
 	}
 
+	// The staging dir must outlive this process: the helper unpacks and swaps
+	// the bundle only after it exits, so t.TempDir() would be gone by then.
+	cacheDir, err := os.MkdirTemp("", "gauge-e2e-update-")
+	if err != nil {
+		t.Fatalf("cache dir: %v", err)
+	}
+
 	m := New(Config{
 		CurrentVersion: "0.0.0",
-		CacheDir:       t.TempDir(),
+		CacheDir:       cacheDir,
 		Logger:         log.New(os.Stderr, "e2e: ", 0),
 		EnableApply:    true,
 		OnQuit:         func() { t.Log("onQuit fired; helper takes over when this process exits") },
