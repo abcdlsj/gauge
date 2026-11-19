@@ -4,8 +4,9 @@
 // Home popover's
 // borderless instrument aesthetic:
 //   Level 1: Subscriptions + Preferences index
-//   Level 2: Subscription detail (cards, health, drill-downs), Add Subscription, General
-//   Level 3: Connection & Auth, Refresh Schedule, New Account, Notifications
+//   Level 2: Subscription detail (cards, health, drill-downs), Add Subscription,
+//            General, Network, Alerts
+//   Level 3: Connection & Auth, Refresh Schedule, New Account
 
 (function () {
   const esc = (v) =>
@@ -60,12 +61,6 @@
     error: 'Error',
     idle: 'Waiting',
   };
-  const ISSUE_PILL = {
-    expired_auth: 'Expired',
-    error: 'Error',
-    unconfigured: 'Setup',
-  };
-
   const CHEVRON = '<svg class="sx-chev" viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m8 5 5 5-5 5"/></svg>';
   const GRIP = '<svg viewBox="0 0 12 16" width="9" height="13" aria-hidden="true"><g fill="currentColor"><circle cx="3.5" cy="3" r="1.3"/><circle cx="8.5" cy="3" r="1.3"/><circle cx="3.5" cy="8" r="1.3"/><circle cx="8.5" cy="8" r="1.3"/><circle cx="3.5" cy="13" r="1.3"/><circle cx="8.5" cy="13" r="1.3"/></g></svg>';
 
@@ -77,46 +72,46 @@
   const SOURCE_META = {
     google: {
       tint: 'var(--gemini)',
-      icon: GaugeIcons.svg('google', 15),
+      icon: GaugeIcons.svg('google', 17),
       desc: 'Antigravity, Flow & Colab',
     },
     commandcode: {
       tint: 'var(--commandcode)',
-      icon: GaugeIcons.svg('commandcode', 15),
+      icon: GaugeIcons.svg('commandcode', 17),
       desc: '5-hour & weekly plan windows',
     },
     opendesign: {
       tint: 'var(--opendesign)',
-      icon: GaugeIcons.svg('opendesign', 15),
+      icon: GaugeIcons.svg('opendesign', 17),
       desc: 'Design Plan & USD balance',
     },
     gcp: {
       tint: 'var(--gcp)',
-      icon: GaugeIcons.svg('gcp', 15),
+      icon: GaugeIcons.svg('gcp', 17),
       desc: 'BigQuery billing & Gemini API calls',
     },
     general: {
-      tint: '#636b78',
-      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.65"/><path d="M9 3.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>',
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.65"/><path d="M9 3.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>',
       desc: 'Theme & menu bar mark',
     },
     network: {
-      tint: 'var(--accent)',
-      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M3 9h12M9 3c1.8 2 2.6 3.9 2.6 6S10.8 13 9 15c-1.8-2-2.6-3.9-2.6-6S7.2 5 9 3Z"/></svg>',
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M3 9h12M9 3c1.8 2 2.6 3.9 2.6 6S10.8 13 9 15c-1.8-2-2.6-3.9-2.6-6S7.2 5 9 3Z"/></svg>',
       desc: 'Proxy for upstream requests',
     },
     webhook: {
-      tint: 'var(--accent-2)',
-      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.5 7.6a3.5 3.5 0 0 1 7 0c0 2.4 1 3.5 1.5 4H4c.5-.5 1.5-1.6 1.5-4ZM7.6 13.7a1.5 1.5 0 0 0 2.8 0"/></svg>',
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M5.5 7.6a3.5 3.5 0 0 1 7 0c0 2.4 1 3.5 1.5 4H4c.5-.5 1.5-1.6 1.5-4ZM7.6 13.7a1.5 1.5 0 0 0 2.8 0"/></svg>',
       desc: 'State-change alerts',
     },
     connection: {
-      tint: 'var(--accent)',
-      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="6.3" cy="9" r="2.7" fill="none" stroke="currentColor" stroke-width="1.65"/><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M9 9h5.8M12.7 9v2.2"/></svg>',
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="6.3" cy="9" r="2.7" fill="none" stroke="currentColor" stroke-width="1.65"/><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M9 9h5.8M12.7 9v2.2"/></svg>',
     },
     schedule: {
-      tint: 'var(--ok)',
-      icon: '<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><circle cx="9" cy="9" r="5.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M9 5.8V9l2.3 1.4"/></svg>',
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M9 5.8V9l2.3 1.4"/></svg>',
     },
   };
 
@@ -294,13 +289,6 @@
       return { slot, name: '', email: '', tier: '', signedIn: false };
     }
 
-    function tierKind(tier) {
-      const t = String(tier || '');
-      if (/ultra/i.test(t)) return 'ultra';
-      if (/pro/i.test(t)) return 'pro';
-      return 'free';
-    }
-
     function accountInitial(acc) {
       const s = (acc && (acc.name || acc.account_name || acc.email)) || 'G';
       return String(s).trim().charAt(0).toUpperCase() || 'G';
@@ -346,8 +334,8 @@
         return { depth: 2, title: `New ${sec ? sec.title : r.id} Account`, parent: 'Add Subscription', providers: [] };
       }
       if (r.kind === 'general') return { depth: 1, title: 'General', parent: 'Settings', providers: [] };
-      if (r.kind === 'webhook') return { depth: 2, title: 'Notifications', parent: 'General', providers: [] };
-      if (r.kind === 'network') return { depth: 2, title: 'Network', parent: 'General', providers: [] };
+      if (r.kind === 'webhook') return { depth: 1, title: 'Alerts', parent: 'Settings', providers: [] };
+      if (r.kind === 'network') return { depth: 1, title: 'Network', parent: 'Settings', providers: [] };
       const sec = section(r.id);
       const secTitle = titleFor(sec, r.id) || r.id;
       const provs = providersForPage(sec, r.id);
@@ -424,7 +412,6 @@
       let prevStr = navStack.length ? navStack.pop() : null;
       if (prevStr === null) {
         if (route.kind === 'add-instance') prevStr = 'add';
-        else if (route.kind === 'webhook' || route.kind === 'network') prevStr = 'general';
         else if (route.kind === 'connection' || route.kind === 'schedule') prevStr = route.id;
         else prevStr = '';
       }
@@ -446,97 +433,82 @@
       return `<label class="sx-switch" title="${esc(label)}"><input type="checkbox" data-vis="${kind}" data-vis-id="${esc(id)}" aria-label="${esc(label)}"${on ? ' checked' : ''} /><span></span></label>`;
     }
 
-    function badgeDot(st) {
-      if (!st || st.status === 'ok' || st.status === 'idle') return '';
-      return `<span class="sx-badge-dot ${esc(st.status)}"></span>`;
-    }
-
-    function sourceBadge(id, st, size = 'md') {
+    // Every source, preference and drill-down row leads with the same 30px
+    // tinted square; only the tint and glyph change.
+    function sourceBadge(id) {
       const base = baseId(id);
       const meta = SOURCE_META[base] || SOURCE_META.general;
-      return `<span class="sx-badge sx-badge-${size}" style="--tint: ${meta.tint}">${meta.icon}${badgeDot(st)}</span>`;
+      return `<span class="sx-badge" style="--tint: ${meta.tint}">${meta.icon}</span>`;
     }
 
-    function googleAvatar(acc, st, size = 'md') {
-      const kind = tierKind(acc.tier);
+    // The one badge style: plan tiers, account names, slot numbers, limits.
+    function tag(text) {
+      return text ? `<span class="sx-tag">${esc(text)}</span>` : '';
+    }
+
+    function googleAvatar(acc) {
       const initial = accountInitial(acc);
       return `
-        <span class="sx-avatar sx-avatar-${size}" data-tier="${kind}">
-          <span class="sx-avatar-inner">
-            <span class="sx-avatar-init">${esc(initial)}</span>
-            <img data-avatar src="/api/avatar/${acc.slot}" alt="" />
-          </span>
-          ${badgeDot(st)}
+        <span class="sx-avatar">
+          <span class="sx-avatar-init">${esc(initial)}</span>
+          <img data-avatar src="/api/avatar/${acc.slot}" alt="" />
         </span>`;
     }
 
-    function microMeter(pct, tone, tint) {
-      const segments = 12;
-      const lit = Math.round((Math.max(0, Math.min(100, pct)) / 100) * segments);
-      let bars = '';
-      for (let i = 0; i < segments; i++) bars += `<i class="${i < lit ? 'on' : ''}"></i>`;
-      return `<span class="sx-mmeter" data-tone="${esc(tone)}" style="--tint: ${tint}" aria-hidden="true">${bars}</span>`;
+    const BROKEN = ['expired_auth', 'error', 'unconfigured'];
+
+    // issueText names the worst broken collector in a few words, or '' when
+    // everything works. It is the only coloured text a row carries.
+    function issueText(provs) {
+      const r = runsForProviders(provs).filter((x) => BROKEN.includes(x.status))
+        .sort((a, b) => SEVERITY.indexOf(a.status) - SEVERITY.indexOf(b.status))[0];
+      if (!r) return null;
+      const who = provs.length > 1 ? `${titleOfProvider(r.provider).replace(/^(Google|GCP)\s+/i, '')} ` : '';
+      const text = r.status === 'expired_auth'
+        ? `${who}sign-in expired`
+        : r.status === 'unconfigured'
+          ? (provs.length > 1 ? `${who}not set up` : 'Not set up')
+          : `${who}error`;
+      return { status: r.status, text: text.charAt(0).toUpperCase() + text.slice(1) };
     }
 
-    function quotaTone(pct) {
-      if (pct <= 5) return 'danger';
-      if (pct < 25) return 'warning';
-      return 'ok';
+    // subLine joins a row's subtitle: the problem first in colour, the rest faint.
+    function subLine(issue, ...rest) {
+      const parts = rest.filter(Boolean).map((t) => esc(t));
+      const lead = issue ? `<span class="sx-sub-issue is-${esc(issue.status)}">${esc(issue.text)}</span>` : '';
+      const tail = parts.length ? `<span class="sx-sub-dim">${lead ? ' · ' : ''}${parts.join(' · ')}</span>` : '';
+      return `<span class="sx-sub-line">${lead}${tail}</span>`;
     }
 
-    function groupTelemetry(g, st, provs) {
+    function groupTelemetry(g, provs) {
       const quotas = (overview && overview.quotas) || [];
       const items = g.items || [];
       const activeItems = items.filter((it) => !it.hidden);
       const pool = activeItems.length ? activeItems : items;
       const snaps = pool.map((it) => quotas.find((q) => q.provider === it.provider && q.metric === it.metric)).filter(Boolean);
 
-      // Find the lowest percentage window for the micro-meter summary.
+      // The lowest percentage window is the one number worth a glance.
       let minPct = null;
-      let minTint = (SOURCE_META[baseId(g.id)] || SOURCE_META.general).tint;
       for (const sn of snaps) {
         const series = sn.series && sn.series.length ? sn.series : [sn];
         for (const s of series) {
           if ((s.unit || '%') === '%' && s.total > 0) {
             const pct = Math.max(0, Math.min(100, (s.remaining / s.total) * 100));
-            if (minPct === null || pct < minPct) {
-              minPct = pct;
-              minTint = sn.metric.startsWith('claude_models') ? 'var(--claude)' : (SOURCE_META[baseId(g.id)] || SOURCE_META.general).tint;
-            }
+            if (minPct === null || pct < minPct) minPct = pct;
           }
         }
       }
 
-      const runs = runsForProviders(provs);
-      const brokenRuns = runs.filter((r) => ['expired_auth', 'error', 'unconfigured'].includes(r.status));
-      let issueHtml = '';
-      if (brokenRuns.length) {
-        const r = brokenRuns[0];
-        const shortWho = titleOfProvider(r.provider).replace(/^(Google|GCP)\s+/i, '');
-        const who = provs.length > 1 ? `${shortWho} ` : '';
-        const text = r.status === 'expired_auth'
-          ? `${who}expired`
-          : r.status === 'unconfigured'
-            ? (provs.length > 1 ? `${who}setup` : 'Setup required')
-            : `${who}error`;
-        issueHtml = `<span class="sx-sub-issue is-${esc(r.status)}">${esc(text)}</span>`;
-      }
-
-      if (minPct !== null) {
-        const tone = quotaTone(minPct);
-        const pctText = `<span class="sx-sub-pct${tone !== 'ok' ? ` is-${tone}` : ''}">${Math.round(minPct)}% left</span>`;
-        const extra = issueHtml || (snaps.length > 1 ? `<span class="sx-sub-dim">${pool.length} cards</span>` : '');
-        return `${microMeter(minPct, tone, minTint)}${pctText}${extra ? `<span class="sx-sub-sep">·</span>${extra}` : ''}`;
-      }
-
+      const issue = issueText(provs);
+      const cards = pool.length > 1 ? `${pool.length} cards` : '';
+      if (minPct !== null) return subLine(issue, `${Math.round(minPct)}% left`, cards);
       if (snaps.length) {
         const sn = snaps[0];
-        const text = `${fmtVal(sn.remaining, sn.unit)} ${esc(sn.unit || '')}`.trim();
-        return `<span class="sx-sub-pct">${text}</span>${issueHtml ? `<span class="sx-sub-sep">·</span>${issueHtml}` : ''}`;
+        return subLine(issue, `${fmtVal(sn.remaining, sn.unit)} ${sn.unit || ''}`.trim(), cards);
       }
-
-      if (issueHtml) return issueHtml;
-      return `<span class="sx-sub-dim">${esc(st ? (STATE_TEXT[st.status] || st.status) : 'Ready')}</span>`;
+      if (issue) return subLine(issue);
+      const st = stateForProviders(provs);
+      return subLine(null, st ? (STATE_TEXT[st.status] || st.status) : 'Ready');
     }
 
     function cardLiveValue(it) {
@@ -552,8 +524,7 @@
           }
         }
         if (lowPct !== null) {
-          const tone = quotaTone(lowPct);
-          return { sub, right: `<span class="sx-card-val${tone !== 'ok' ? ` is-${tone}` : ''}">${Math.round(lowPct)}<i>%</i></span>` };
+          return { sub, right: `<span class="sx-card-val">${Math.round(lowPct)}<i>%</i></span>` };
         }
       }
       const unit = q.unit || '';
@@ -601,7 +572,7 @@
         const proj = fields.find((f) => f.key === 'gcp_project_id');
         const tbl = fields.find((f) => f.key === 'gcp_billing_table');
         if (proj && proj.configured && tbl && tbl.configured) return proj.value;
-        if (proj && proj.configured) return `${proj.value} · billing table unset`;
+        if (proj && proj.configured) return proj.value;
         return 'Project & billing export';
       }
       return st ? (STATE_TEXT[st.status] || st.status) : 'Credentials';
@@ -620,135 +591,90 @@
 
     function renderIndex() {
       const groups = layoutGroups().filter((g) => section(g.id));
-      const visibleCount = groups.filter((g) => !g.hidden).length;
 
       const groupRows = groups.map((g) => {
         const sec = section(g.id) || {};
         const provs = providersForPage(sec, g.id);
-        const st = stateForProviders(provs);
         const isGoogle = g.id === 'google' || g.id.startsWith('google-');
-        const inst = instanceOf(g.id);
-
-        let badge;
-        let titleHtml;
-        if (isGoogle) {
-          const acc = resolveGoogleAccount(g.id);
-          badge = acc && acc.signedIn ? googleAvatar(acc, st, 'sm') : sourceBadge(g.id, st, 'sm');
-          const kind = tierKind(g.detail || (acc && acc.tier));
-          const plan = g.detail || (acc && acc.tier);
-          titleHtml = `<b>${esc(g.title)}</b>${plan ? `<span class="sx-plan ${kind === 'ultra' ? '' : kind}">${esc(plan)}</span>` : ''}`;
-        } else {
-          badge = sourceBadge(g.id, st, 'sm');
-          if (inst && g.account_name) {
-            titleHtml = `<b>${esc(sec.title)}</b><span class="sx-tag">${esc(g.account_name)}</span>`;
-          } else if (g.account_name) {
-            titleHtml = `<b>${esc(g.title)}</b><span class="sx-tag">${esc(g.account_name)}</span>`;
-          } else {
-            titleHtml = `<b>${esc(g.title)}</b>`;
-          }
-        }
-
-        const issueBadge = st && ISSUE_PILL[st.status] && !isGoogle
-          ? `<span class="sx-pill is-${esc(st.status)}">${ISSUE_PILL[st.status]}</span>` : '';
+        const acc = isGoogle ? resolveGoogleAccount(g.id) : null;
+        const plan = isGoogle ? (g.detail || (acc && acc.tier)) : g.account_name;
+        const title = instanceOf(g.id) && !isGoogle ? sec.title : g.title;
 
         return `
           <div class="sx-item sx-sortrow${g.hidden ? ' is-hidden' : ''}" data-sort-id="${esc(g.id)}" data-nav="${esc(g.id)}" role="button" tabindex="0">
             ${handle(g.account_name || g.email || g.title)}
-            ${badge}
+            ${sourceBadge(g.id)}
             <div class="sx-item-main">
-              <div class="sx-item-top">${titleHtml}${issueBadge}</div>
-              <div class="sx-item-sub">${groupTelemetry(g, st, provs)}</div>
+              <div class="sx-item-top"><b>${esc(title)}</b>${tag(plan)}</div>
+              <div class="sx-item-sub">${groupTelemetry(g, provs)}</div>
             </div>
-            ${visSwitch('group', g.id, !g.hidden, `Show ${g.title}`)}
+            ${g.hidden ? '<span class="sx-trail">Hidden</span>' : ''}
             ${CHEVRON}
           </div>`;
       }).join('');
-
 
       const genSec = section('general');
       const theme = localStorage.getItem('gauge-theme') || 'auto';
       const themeLabel = (THEMES.find((t) => t[0] === theme) || THEMES[0])[1];
       const iconField = genSec && genSec.fields.find((f) => f.key === ICON_KEY);
       const iconLabel = iconField ? (ICON_LABELS[iconField.value] || iconField.value) : 'Gauge';
-      const webhookField = genSec && genSec.fields.find((f) => f.key === 'webhook_url');
-      const webhookOn = Boolean(webhookField && webhookField.configured);
 
       return `
         <section class="sx-sec">
           <div class="sx-eyebrow-bar">
             <span class="sx-eyebrow">Subscriptions</span>
-            <span class="sx-eyebrow-meta">${visibleCount} of ${groups.length} shown</span>
+            <button class="sx-eyebrow-link" type="button" data-nav="add">+ Add</button>
           </div>
           <div class="sx-list sx-sortlist" data-sort="groups">
             ${groupRows}
           </div>
-          <p class="sx-hint">Drag grip to reorder · Switch toggles home visibility</p>
         </section>
         <section class="sx-sec">
           <div class="sx-eyebrow-bar">
             <span class="sx-eyebrow">Preferences</span>
           </div>
           <div class="sx-list">
-            <div class="sx-item" data-nav="general" role="button" tabindex="0">
-              ${sourceBadge('general', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>General</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(themeLabel)} theme · ${esc(iconLabel)} mark</span></div>
-              </div>
-              <img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" />
-              ${CHEVRON}
-            </div>
-            <div class="sx-item" data-nav="general/webhook" role="button" tabindex="0">
-              ${sourceBadge('webhook', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Notifications</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">State-change alert webhook</span></div>
-              </div>
-              <span class="sx-pill ${webhookOn ? 'is-ok' : 'is-muted'}">${webhookOn ? 'Active' : 'Off'}</span>
-              ${CHEVRON}
-            </div>
-            <div class="sx-item" data-nav="general/network" role="button" tabindex="0">
-              ${sourceBadge('network', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Network</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(proxySummary(genSec))}</span></div>
-              </div>
-              ${CHEVRON}
-            </div>
+            ${navRow('general', 'general', 'General', subLine(null, `${themeLabel} theme`, `${iconLabel} mark`, appUpdate ? `${appUpdate} available` : ''))}
+            ${navRow('general/network', 'network', 'Network', subLine(null, proxySummary(genSec)))}
+            ${navRow('general/webhook', 'webhook', 'Alerts', subLine(null, webhookSummary(genSec)))}
           </div>
-        </section>
-        <div class="sx-add-dock">
-          <button class="sx-add-cta" type="button" data-nav="add">
-            <span class="sx-add-cta-icon" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="13" height="13">
-                <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M8 3.2v9.6M3.2 8h9.6"/>
-              </svg>
-            </span>
-            <span class="sx-add-cta-text">
-              <b>Add Subscription</b>
-              <span>Google AI · Command Code · Open Design · GCP</span>
-            </span>
-            ${CHEVRON}
-          </button>
+        </section>`;
+    }
+
+    // navRow is a drill-down row: badge, title, one subtitle line, chevron.
+    function navRow(target, badgeId, title, subHtml, extra = '') {
+      return `
+        <div class="sx-item" data-nav="${esc(target)}" role="button" tabindex="0">
+          ${sourceBadge(badgeId)}
+          <div class="sx-item-main">
+            <div class="sx-item-top"><b>${esc(title)}</b></div>
+            <div class="sx-item-sub">${subHtml}</div>
+          </div>
+          ${extra}
+          ${CHEVRON}
         </div>`;
+    }
+
+    function webhookSummary(sec) {
+      const f = sec && sec.fields.find((x) => x.key === 'webhook_url');
+      return f && f.configured ? `Webhook on · ${f.value}` : 'Webhook off';
     }
 
     /* ---------- Level 2: Subscription Detail ---------- */
 
-    function renderHero(sec, id, st) {
+    function renderHero(sec, id) {
       const isGoogle = id === 'google' || id.startsWith('google-');
 
       if (isGoogle) {
         const acc = resolveGoogleAccount(id);
         if (acc && acc.signedIn) {
-          const kind = tierKind(acc.tier);
           return `
             <div class="sx-hero">
-              ${googleAvatar(acc, st, 'lg')}
+              ${googleAvatar(acc)}
               <div class="sx-hero-text">
                 <div class="sx-hero-top">
                   <b>${esc(acc.name || acc.email || 'Google Account')}</b>
-                  ${acc.tier ? `<span class="sx-plan ${kind === 'ultra' ? '' : kind}">${esc(acc.tier)}</span>` : ''}
+                  ${tag(acc.tier)}
                 </div>
                 ${acc.email ? `<span class="sx-hero-sub">${esc(acc.email)}</span>` : ''}
               </div>
@@ -756,7 +682,7 @@
         }
         return `
           <div class="sx-hero">
-            ${sourceBadge('google', st, 'lg')}
+            ${sourceBadge('google')}
             <div class="sx-hero-text">
               <b>Google AI</b>
               <span class="sx-hero-sub">Sign in to read Antigravity quota and plan tier</span>
@@ -767,50 +693,48 @@
 
       const g = groupOf(id);
       const inst = instanceOf(id);
-      const tag = (g && g.account_name) || (inst ? `Slot ${inst.slot}` : '');
+      const label = (g && g.account_name) || (inst ? `Slot ${inst.slot}` : '');
       return `
         <div class="sx-hero">
-          ${sourceBadge(id, st, 'lg')}
+          ${sourceBadge(id)}
           <div class="sx-hero-text">
             <div class="sx-hero-top">
               <b>${esc(sec.title)}</b>
-              ${tag ? `<span class="sx-tag">${esc(tag)}</span>` : ''}
+              ${tag(label)}
             </div>
             ${sec.summary ? `<span class="sx-hero-sub">${esc(sec.summary)}</span>` : ''}
           </div>
         </div>`;
     }
 
+    const FIX_TEXT = { expired_auth: 'Sign in again', error: 'Fix', unconfigured: 'Set up' };
+
+    // renderHealth lists each collector once: a dot, its name, and either when
+    // it last ran or the one action that repairs it.
     function renderHealth(id, provs) {
       if (!provs.length) return '';
       const runs = runsForProviders(provs);
-      const list = runs.length ? runs : provs.map((p) => ({ provider: p, status: 'idle' }));
+      const list = provs.map((p) => runs.find((r) => r.provider === p) || { provider: p, status: 'idle' });
       const lines = list.map((r) => {
         const name = provs.length > 1 ? titleOfProvider(r.provider) : 'Collector';
-        const state = STATE_TEXT[r.status] || r.status;
-        const when = r.last_run ? fmtAgo(r.last_run) : '';
+        const broken = BROKEN.includes(r.status);
+        const when = r.last_run ? fmtAgo(r.last_run) : (STATE_TEXT[r.status] || '');
+        const right = broken
+          ? `<button class="sx-health-fix is-${esc(r.status)}" type="button" data-nav="${esc(id)}/connection">${FIX_TEXT[r.status]} ›</button>`
+          : `<span class="sx-health-time">${esc(r.status === 'running' ? 'Refreshing' : when)}</span>`;
         return `
-          <div class="sx-health-line">
+          <div class="sx-health-line${broken ? ' is-broken' : ''}">
             <span class="sx-dot ${esc(r.status)}"></span>
             <span class="sx-health-name">${esc(name)}</span>
-            <span class="sx-health-state is-${esc(r.status)}">${esc(state)}</span>
-            ${when ? `<span class="sx-health-time">${esc(when)}</span>` : ''}
+            ${right}
+            ${broken && r.error && r.status !== 'unconfigured' ? `<span class="sx-health-msg" title="${esc(r.error)}">${esc(r.error)}</span>` : ''}
           </div>`;
       }).join('');
-
-      const broken = list.find((r) => r.error && r.status !== 'ok');
-      const callout = broken ? `
-        <div class="sx-callout is-${esc(broken.status)}">
-          <div class="sx-callout-msg">${esc(broken.error)}</div>
-          <button class="sx-btn" type="button" data-nav="${esc(id)}/connection">Configure</button>
-        </div>` : '';
-
-      return `<div class="sx-health">${lines}${callout}</div>`;
+      return `<div class="sx-health">${lines}</div>`;
     }
 
     function renderSection(sec, id) {
       const provs = providersForPage(sec, id);
-      const st = stateForProviders(provs);
       const g = groupOf(id);
       const inst = instanceOf(id);
       const isGoogleExtra = id.startsWith('google-') && g && g.slot > 1;
@@ -840,18 +764,22 @@
 
         cardsHtml = `
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar">
-              <span class="sx-eyebrow">Menu bar &amp; overview</span>
-              <span class="sx-eyebrow-meta">${g.items.length ? `${visCount} of ${g.items.length} shown` : 'No snapshots yet'}</span>
-            </div>
             <div class="sx-list">
               <div class="sx-row">
                 <span class="sx-label">
-                  <b>Show in menu bar</b>
-                  <span class="sx-help">${g.hidden ? 'Hidden from Home; snapshots still refresh.' : 'Drag cards below to set Home order.'}</span>
+                  <b>Show on Home</b>
+                  ${g.hidden ? '<span class="sx-help">Hidden from Home; snapshots still refresh.</span>' : ''}
                 </span>
-                ${visSwitch('group', g.id, !g.hidden, `Show ${g.title}`)}
+                ${visSwitch('group', g.id, !g.hidden, `Show ${g.title} on Home`)}
               </div>
+            </div>
+          </section>
+          <section class="sx-sec">
+            <div class="sx-eyebrow-bar">
+              <span class="sx-eyebrow">Cards · drag to reorder</span>
+              <span class="sx-eyebrow-meta">${g.items.length ? `${visCount} of ${g.items.length}` : 'No snapshots yet'}</span>
+            </div>
+            <div class="sx-list">
               <div class="sx-sortlist${g.hidden ? ' muted' : ''}" data-sort="items:${esc(g.id)}">
                 ${rows || '<div class="sx-row"><span class="sx-help">Cards appear after the first successful refresh.</span></div>'}
               </div>
@@ -859,27 +787,13 @@
           </section>`;
       }
 
-      const broken = st && ['expired_auth', 'error', 'unconfigured'].includes(st.status);
+      const issue = issueText(provs);
       const configHtml = `
         <section class="sx-sec">
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Configuration</span></div>
           <div class="sx-list">
-            <div class="sx-item" data-nav="${esc(id)}/connection" role="button" tabindex="0">
-              ${sourceBadge('connection', broken ? st : null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Connection &amp; Auth</b>${broken ? `<span class="sx-pill is-${esc(st.status)}">${ISSUE_PILL[st.status] || 'Check'}</span>` : ''}</div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(conSummary(sec, id, st))}</span></div>
-              </div>
-              ${CHEVRON}
-            </div>
-            <div class="sx-item" data-nav="${esc(id)}/schedule" role="button" tabindex="0">
-              ${sourceBadge('schedule', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Refresh Schedule</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(schedSummary(sec, id))}</span></div>
-              </div>
-              ${CHEVRON}
-            </div>
+            ${navRow(`${id}/connection`, 'connection', 'Connection & Auth', subLine(issue, conSummary(sec, id, stateForProviders(provs))))}
+            ${navRow(`${id}/schedule`, 'schedule', 'Refresh Schedule', subLine(null, schedSummary(sec, id)))}
           </div>
         </section>`;
 
@@ -907,7 +821,7 @@
 
       return `
         <section class="sx-sec sx-sec-hero">
-          ${renderHero(sec, id, st)}
+          ${renderHero(sec, id)}
           ${renderHealth(id, provs)}
         </section>
         ${cardsHtml}
@@ -960,42 +874,41 @@
           <p class="sx-lead">Connect a source or add another account.</p>
           <div class="sx-list">
             <div class="sx-item${googleAtMax ? ' is-disabled' : ''}" ${googleAction}>
-              ${sourceBadge('google', null, 'md')}
+              ${sourceBadge('google')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google AI Account</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.google.desc)} · ${accounts.length}/3 connected</span></div>
+                <div class="sx-item-sub">${subLine(null, 'OAuth', SOURCE_META.google.desc)}</div>
               </div>
-              <span class="sx-pill ${googleAtMax ? 'is-muted' : 'is-accent'}">${googleAtMax ? 'Max 3' : 'OAuth'}</span>
+              ${tag(`${accounts.length} of 3`)}
               ${googleAtMax ? '' : CHEVRON}
             </div>
 
             <div class="sx-item${ccFull ? ' is-disabled' : ''}" ${ccFull ? 'aria-disabled="true"' : `data-nav="${ccTarget}" role="button" tabindex="0"`}>
-              ${sourceBadge('commandcode', null, 'md')}
+              ${sourceBadge('commandcode')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Command Code Account</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.commandcode.desc)} · ${ccCount}/3 connected</span></div>
+                <div class="sx-item-sub">${subLine(null, 'API key', SOURCE_META.commandcode.desc)}</div>
               </div>
-              <span class="sx-pill ${ccFull ? 'is-muted' : (ccPrimary ? 'is-muted' : 'is-accent')}">${ccFull ? 'Max 3' : 'API key'}</span>
+              ${tag(`${ccCount} of 3`)}
               ${ccFull ? '' : CHEVRON}
             </div>
 
             <div class="sx-item${odFull ? ' is-disabled' : ''}" ${odFull ? 'aria-disabled="true"' : `data-nav="${odTarget}" role="button" tabindex="0"`}>
-              ${sourceBadge('opendesign', null, 'md')}
+              ${sourceBadge('opendesign')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Open Design Account</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.opendesign.desc)} · ${odCount}/3 connected</span></div>
+                <div class="sx-item-sub">${subLine(null, 'Control key', SOURCE_META.opendesign.desc)}</div>
               </div>
-              <span class="sx-pill ${odFull ? 'is-muted' : (odPrimary ? 'is-muted' : 'is-accent')}">${odFull ? 'Max 3' : 'Control key'}</span>
+              ${tag(`${odCount} of 3`)}
               ${odFull ? '' : CHEVRON}
             </div>
 
             <div class="sx-item" data-nav="${gcpReady ? 'gcp' : 'gcp/connection'}" role="button" tabindex="0">
-              ${sourceBadge('gcp', null, 'md')}
+              ${sourceBadge('gcp')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google Cloud</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(SOURCE_META.gcp.desc)}</span></div>
+                <div class="sx-item-sub">${subLine(gcpReady ? null : { status: 'unconfigured', text: 'Not set up' }, SOURCE_META.gcp.desc)}</div>
               </div>
-              <span class="sx-pill ${gcpReady ? 'is-ok' : 'is-warning'}">${gcpReady ? 'Configured' : 'Setup'}</span>
               ${CHEVRON}
             </div>
           </div>
@@ -1022,9 +935,6 @@
     function renderGeneral(sec) {
       const theme = localStorage.getItem('gauge-theme') || 'auto';
       const iconField = sec.fields.find((f) => f.key === ICON_KEY);
-      const webhookField = sec.fields.find((f) => f.key === 'webhook_url');
-      const webhookOn = Boolean(webhookField && webhookField.configured);
-
       const themeCards = THEMES.map(([val, label, sub]) => `
         <button class="sx-vis-card" type="button" role="radio" data-theme-choice="${val}" aria-checked="${val === theme}">
           ${themePreviewThumb(val)}
@@ -1052,44 +962,17 @@
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">App &amp; menu bar icon</span></div>
           <div class="sx-icon-grid" role="radiogroup" aria-label="Icon">${iconCards}</div>
         </section>` : ''}
-        <section class="sx-sec">
-          <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Notifications</span></div>
-          <div class="sx-list">
-            <div class="sx-item" data-nav="general/webhook" role="button" tabindex="0">
-              ${sourceBadge('webhook', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Alert Webhook</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${webhookOn ? `Endpoint ${esc(webhookField.value)}` : 'Receive JSON on state changes'}</span></div>
-              </div>
-              <span class="sx-pill ${webhookOn ? 'is-ok' : 'is-muted'}">${webhookOn ? 'Active' : 'Off'}</span>
-              ${CHEVRON}
-            </div>
-          </div>
-        </section>
-        <section class="sx-sec">
-          <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Network</span></div>
-          <div class="sx-list">
-            <div class="sx-item" data-nav="general/network" role="button" tabindex="0">
-              ${sourceBadge('network', null, 'sm')}
-              <div class="sx-item-main">
-                <div class="sx-item-top"><b>Proxy</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${esc(proxySummary(sec))}</span></div>
-              </div>
-              ${CHEVRON}
-            </div>
-          </div>
-        </section>
         ${appVersion ? `
         <section class="sx-sec">
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">About</span></div>
           <div class="sx-list">
             <div class="sx-item sx-item-static">
-              <img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" />
+              <span class="sx-badge" style="--tint: var(--sx-neutral)"><img class="sx-mini-mark" src="/mark.svg" width="18" height="18" alt="" /></span>
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Gauge</b></div>
-                <div class="sx-item-sub"><span class="sx-sub-dim">${appUpdate ? `Release ${esc(appUpdate)} available` : 'Up to date'}</span></div>
+                <div class="sx-item-sub">${subLine(null, appUpdate ? `Release ${appUpdate} available` : 'Up to date')}</div>
               </div>
-              <span class="sx-pill ${appUpdate ? 'is-accent' : 'is-muted'}">${esc(appVersion)}</span>
+              ${tag(appVersion)}
             </div>
           </div>
         </section>` : ''}`;
@@ -1202,7 +1085,7 @@
       const action = `<button class="${btnClass}" type="button" data-oauth-slot="${acc.slot}">${btnText}</button>`;
       return `
         <div class="sx-oauth-box">
-          ${acc.signedIn ? googleAvatar(acc, null, 'md') : sourceBadge('google', null, 'md')}
+          ${acc.signedIn ? googleAvatar(acc) : sourceBadge('google')}
           <div class="sx-oauth-info">
             <b>${esc(acc.signedIn ? (acc.name || acc.email || `Slot ${acc.slot}`) : 'Not signed in')}</b>
             <span>${esc(acc.signedIn ? (acc.email || 'Google OAuth connected') : 'Connect via Google sign-in')}</span>
@@ -1302,7 +1185,7 @@
             <div class="sx-sched-head">
               <span class="sx-label">
                 <b>${esc(f.label)}</b>
-                <span class="sx-help">Minimum ${esc(f.min || 1)} min · Default ${esc(f.default)} min${run && run.last_run ? ` · Last ${esc(fmtAgo(run.last_run))}` : ''}</span>
+                <span class="sx-help">Default ${esc(fmtMinutes(f.default))} · min ${esc(fmtMinutes(f.min || 1))}${run && run.last_run ? ` · ran ${esc(fmtAgo(run.last_run))}` : ''}</span>
               </span>
               <span class="sx-flag" aria-live="polite"></span>
               <span class="sx-num">
@@ -1330,7 +1213,7 @@
       return `
         <section class="sx-sec">
           <div class="sx-hero">
-            ${sourceBadge(provider, null, 'lg')}
+            ${sourceBadge(provider)}
             <div class="sx-hero-text">
               <b>New ${esc(title)}</b>
               <span class="sx-hero-sub">Tracked as its own subscription in the menu bar.</span>
@@ -1391,7 +1274,7 @@
         <section class="sx-sec">
           <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Current route</span></div>
           <div class="sx-net">
-            <span class="sx-pill is-muted" data-net-pill>Checking…</span>
+            <span class="sx-tag" data-net-pill>Checking…</span>
             <span class="sx-net-text" data-net-text></span>
           </div>
           <div class="sx-net-found" data-net-found hidden></div>
@@ -1414,18 +1297,18 @@
       const text = root.querySelector('[data-net-text]');
       if (!pill || !text) return;
       if (!cfg) {
-        pill.className = 'sx-pill is-error';
+        pill.className = 'sx-tag';
         pill.textContent = 'Unknown';
         text.textContent = error || '';
         return;
       }
       const origin = { setting: 'custom', environment: 'environment', system: 'system proxy' }[cfg.source];
       if (cfg.url) {
-        pill.className = 'sx-pill is-ok';
+        pill.className = 'sx-tag';
         pill.textContent = cfg.source === 'setting' ? 'Custom' : 'Automatic';
         text.textContent = `${cfg.url}${origin && cfg.source !== 'setting' ? ` · ${origin}` : ''}`;
       } else {
-        pill.className = 'sx-pill is-muted';
+        pill.className = 'sx-tag';
         pill.textContent = 'Direct';
         text.textContent = cfg.source === 'setting' ? 'proxy off' : 'no proxy configured';
       }

@@ -552,6 +552,7 @@ def main() -> None:
         popover_shot(httpd, f"{base}/popover.html?settings=gcp/connection&theme=light", OUT / "popover-settings-gcp-connection.png")
         popover_shot(httpd, f"{base}/popover.html?settings=google/schedule&theme=light", OUT / "popover-settings-schedule.png")
         popover_shot(httpd, f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=general/network&theme=light", OUT / "popover-settings-network.png")
         popover_shot(httpd, f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png")
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 900, 536)
@@ -571,6 +572,7 @@ def main() -> None:
         "popover-settings-gcp-connection.png",
         "popover-settings-schedule.png",
         "popover-settings-webhook.png",
+        "popover-settings-network.png",
         "popover-settings-add-instance.png",
         "app-icon.png",
         "tray-icon-readability.png",
