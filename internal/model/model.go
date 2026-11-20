@@ -43,6 +43,10 @@ type Account struct {
 	// when the two were signed in with different accounts.
 	IDEEmail    string `json:"ide_email,omitempty"`
 	SignInEmail string `json:"sign_in_email,omitempty"`
+	// AuthExpired is set when Google rejected the slot's Gauge sign-in the
+	// last time it was used. While the IDE runs, slot 1's sign-in is not used
+	// and so not checked.
+	AuthExpired bool `json:"auth_expired,omitempty"`
 }
 
 // Snapshot is a single quota reading for one provider metric.

@@ -292,6 +292,7 @@
           duplicateOf: (acc && acc.duplicate_of) || 0,
           ideEmail: (acc && acc.ide_email) || '',
           signInEmail: (acc && acc.sign_in_email) || '',
+          authExpired: Boolean(acc && acc.auth_expired),
         };
       }
       if (acc) {
@@ -305,6 +306,7 @@
           duplicateOf: acc.duplicate_of || 0,
           ideEmail: acc.ide_email || '',
           signInEmail: acc.sign_in_email || '',
+          authExpired: Boolean(acc.auth_expired),
         };
       }
       return { slot, name: '', email: '', tier: '', signedIn: false, oauth: false, duplicateOf: 0, ideEmail: '', signInEmail: '' };
@@ -613,7 +615,7 @@
       if (id === SESSION_GROUP) return cookies;
       if (/^google-\d+$/.test(id)) {
         const acc = resolveGoogleAccount(id);
-        const p1 = acc && acc.oauth ? 'Google sign-in' : 'Sign in required';
+        const p1 = !acc || !acc.oauth ? 'Sign in required' : acc.authExpired ? 'Sign-in expired' : 'Google sign-in';
         return [p1, cookies].filter(Boolean).join(' · ');
       }
       if (sec.id === 'google') {
@@ -1198,42 +1200,56 @@
         </div>`;
     }
 
-    // renderOAuthCard is one Gauge sign-in: who it is and what to do with it.
-    function renderOAuthCard(id) {
+    // renderSignIn is one slot's Gauge sign-in as a plain row. Its button
+    // follows the state: none when the sign-in works, "Sign in again" only
+    // when Google rejected it, and for slot 1, which the IDE covers, a quiet
+    // "Set up" instead of a call to action.
+    function renderSignIn(id) {
       const acc = resolveGoogleAccount(id);
       if (!acc) return '';
       const slot1 = acc.slot === 1;
-      // Slot 1 can be named by the IDE alone; this card is Gauge's own
-      // sign-in, so it names that account.
       const email = slot1 ? acc.signInEmail : acc.email;
-      const shown = acc.oauth
-        ? { name: slot1 && !sameEmail(acc.signInEmail, acc.email) ? '' : acc.name, email, slot: acc.slot }
-        : null;
-      let sub;
+      const btn = (cls, text) => `<button class="sx-btn${cls}" type="button" data-oauth-slot="${acc.slot}">${text}</button>`;
+
       if (!acc.oauth) {
-        sub = slot1 ? 'Not signed in. Needed only to read quota while the IDE is closed.' : 'Not signed in';
-      } else if (acc.duplicateOf) {
-        sub = `Same account as ${slotName(acc.duplicateOf)}; its quota shows there.`;
-      } else if (slot1 && acc.ideEmail && !sameEmail(acc.ideEmail, email)) {
-        sub = `Differs from the IDE's account (${acc.ideEmail}). Read only while the IDE is closed.`;
-      } else if (slot1) {
-        sub = 'Read while the IDE is closed.';
-      } else {
-        sub = 'Read from the Cloud Code API, whether or not the IDE runs.';
+        return `
+          <div class="sx-list">
+            <div class="sx-row">
+              <span class="sx-label">
+                <b>Google sign-in</b>
+                <span class="sx-help">${slot1
+                  ? 'Optional. Lets Gauge read quota while the IDE is closed.'
+                  : 'Needed to read this account.'}</span>
+              </span>
+              ${slot1 ? btn('', 'Set up') : btn(' primary', 'Sign in with Google')}
+            </div>
+          </div>`;
       }
-      const main = acc.oauth
-        ? `<button class="sx-btn" type="button" data-oauth-slot="${acc.slot}">Re-authenticate</button>`
-        : `<button class="sx-btn primary" type="button" data-oauth-slot="${acc.slot}">Sign in with Google</button>`;
-      const signOut = slot1 && acc.oauth
-        ? '<button class="sx-btn danger" type="button" data-sign-out="1">Sign out</button>' : '';
+
+      let help;
+      if (acc.authExpired) {
+        help = 'Google rejected this sign-in. Sign in again to keep reading it.';
+      } else if (acc.duplicateOf) {
+        help = `Same account as ${slotName(acc.duplicateOf)}; its quota shows there.`;
+      } else if (slot1 && acc.ideEmail && email && !sameEmail(acc.ideEmail, email)) {
+        help = `Not the IDE's account (${acc.ideEmail}). Used only while the IDE is closed.`;
+      } else if (slot1) {
+        help = 'Used while the IDE is closed.';
+      } else {
+        help = 'Read from the Cloud Code API, whether or not the IDE runs.';
+      }
+      const right = acc.authExpired
+        ? btn(' primary', 'Sign in again')
+        : `${tag('Signed in')}${slot1 ? '<button class="sx-btn danger" type="button" data-sign-out="1">Sign out</button>' : ''}`;
       return `
-        <div class="sx-oauth-box">
-          ${shown ? googleAvatar(shown) : sourceBadge('google')}
-          <div class="sx-oauth-info">
-            <b>${esc(shown ? (shown.name || email || `Account ${acc.slot}`) : 'Google sign-in')}</b>
-            <span>${esc(sub)}</span>
+        <div class="sx-list">
+          <div class="sx-row">
+            <span class="sx-label">
+              <b>${esc(email || 'Google account')}</b>
+              <span class="sx-help">${esc(help)}</span>
+            </span>
+            ${right}
           </div>
-          <div class="sx-oauth-btns">${main}${signOut}</div>
         </div>`;
     }
 
@@ -1297,7 +1313,7 @@
         return `
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google sign-in</span></div>
-            ${renderOAuthCard(id)}
+            ${renderSignIn(id)}
             <p class="sx-hint">The IDE only knows the account it is signed in to, so this account is read through Gauge's own sign-in.</p>
           </section>
           ${cookies}`;
@@ -1307,12 +1323,12 @@
       if (id === 'google') {
         return `
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity IDE</span><span class="sx-eyebrow-meta">First choice</span></div>
+            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity IDE</span></div>
             ${renderIDECard()}
           </section>
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google sign-in</span><span class="sx-eyebrow-meta">While the IDE is closed</span></div>
-            ${renderOAuthCard('google')}
+            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">While the IDE is closed</span></div>
+            ${renderSignIn('google')}
           </section>
           ${cookies}`;
       }

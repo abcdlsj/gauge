@@ -208,6 +208,22 @@ def fixture_overview_accounts() -> dict:
     return ov
 
 
+def fixture_overview_signin_expired() -> dict:
+    """Account 2's Gauge sign-in was rejected by Google."""
+    ov = fixture_overview_accounts()
+    ov["accounts"][1]["auth_expired"] = True
+    ov["accounts"][0].update({"sign_in_email": "songjian.li@gmail.com"})
+    return ov
+
+
+def fixture_overview_ide_only() -> dict:
+    """The IDE runs and Gauge holds no sign-in: the usual setup."""
+    ov = fixture_overview()
+    ov["sources"] = {"antigravity": "local_ide"}
+    ov["accounts"][0].update({"ide_email": "songjian.li@gmail.com"})
+    return ov
+
+
 def fixture_overview_ide_closed() -> dict:
     """The IDE is closed and Gauge holds no sign-in for its account."""
     ov = fixture_overview()
@@ -241,6 +257,8 @@ def fixtures() -> dict:
         "google-only": (fixture_overview_google_only, fixture_settings),
         "accounts": (fixture_overview_accounts, fixture_settings),
         "ide-closed": (fixture_overview_ide_closed, fixture_settings),
+        "ide-only": (fixture_overview_ide_only, fixture_settings),
+        "signin-expired": (fixture_overview_signin_expired, fixture_settings),
     }
 
 

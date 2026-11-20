@@ -134,14 +134,18 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 // collectPrimary reads slot 1: the IDE first, then Gauge's own sign-in.
 func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool) (model.Account, []model.Snapshot, error) {
 	signedIn := d.hasSignIn(ctx, 1)
-	var who model.Account
+	var (
+		who     model.Account
+		expired bool
+	)
 	if signedIn {
-		who = d.signInIdentity(ctx, 1)
+		who, expired = d.signInIdentity(ctx, 1)
 	}
 	// stamp records both identities on whichever account slot 1 shows.
 	stamp := func(a model.Account, ideEmail string) model.Account {
 		a.Slot, a.Primary, a.OAuth = 1, true, signedIn
 		a.IDEEmail = ideEmail
+		a.AuthExpired = expired
 		if signedIn {
 			a.SignInEmail = who.Email
 		}
@@ -164,6 +168,7 @@ func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool
 				_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
 				return account, mergeFamilies(models, pools, local.credits), nil
 			}
+			account.AuthExpired = errors.Is(err, ErrExpiredAuth)
 			d.Log.Printf("antigravity: account 1: Cloud Code fallback failed: %v", err)
 		} else if signedIn {
 			d.Log.Printf("antigravity: account 1: Gauge is signed in as %q, the IDE as %q; not mixing them",
@@ -188,6 +193,7 @@ func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool
 	_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
 	models, pools, info, err := collectRemote(ctx, d, nil, SourceAntigravity)
 	if err != nil {
+		account.AuthExpired = errors.Is(err, ErrExpiredAuth)
 		return account, nil, err
 	}
 	account.TierID = tierName(info)
@@ -235,8 +241,8 @@ func collectExtraAccounts(ctx context.Context, d *Deps, seen string) ([]model.Sn
 		if !d.hasSignIn(ctx, slot) {
 			continue
 		}
-		label := d.signInIdentity(ctx, slot)
-		label.Slot, label.OAuth = slot, true
+		label, expired := d.signInIdentity(ctx, slot)
+		label.Slot, label.OAuth, label.AuthExpired = slot, true, expired
 		if prev, dup := shown[strings.ToLower(label.Email)]; dup && label.Email != "" {
 			label.DuplicateOf = prev
 			d.Log.Printf("antigravity: account %d is %s, already shown as account %d; skipping", slot, label.Email, prev)
@@ -249,6 +255,7 @@ func collectExtraAccounts(ctx context.Context, d *Deps, seen string) ([]model.Sn
 
 		models, pools, info, err := collectRemote(ctx, d, nil, sourceFor(slot))
 		if err != nil {
+			label.AuthExpired = errors.Is(err, ErrExpiredAuth)
 			d.Log.Printf("antigravity: account %d: %v", slot, err)
 			accounts = append(accounts, label)
 			continue

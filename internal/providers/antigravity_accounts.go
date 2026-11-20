@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -69,36 +70,37 @@ func (d *Deps) hasSignIn(ctx context.Context, slot int) bool {
 // is reused while it matches the current token; otherwise Google's userinfo
 // endpoint is asked once and the answer stored, avatar included. The zero
 // Account means no token, or no answer for a token Gauge has never seen.
-func (d *Deps) signInIdentity(ctx context.Context, slot int) model.Account {
+// expired reports whether Google rejected the token.
+func (d *Deps) signInIdentity(ctx context.Context, slot int) (account model.Account, expired bool) {
 	src := sourceFor(slot)
 	key := identityKey(slot)
 	stored := d.loadIdentity(ctx, key)
 
 	c, err := d.resolveCreds(ctx, src)
 	if err != nil {
-		return model.Account{}
+		return model.Account{}, false
 	}
 	if stored.FP == c.fingerprint && stored.Email != "" {
-		return stored.Account
+		return stored.Account, false
 	}
 
 	auth, err := d.GoogleAuth(ctx, AntigravityScopes, src)
 	if err == nil {
-		var account model.Account
 		account, err = d.userInfo(ctx, auth)
 		if err == nil {
 			account.Picture = d.avatarData(ctx, account.Picture)
 			d.saveIdentity(ctx, key, storedIdentity{Account: account, FP: c.fingerprint})
-			return account
+			return account, false
 		}
 	}
 	d.Log.Printf("antigravity: account %d: cannot read who signed in: %v", slot, err)
+	expired = errors.Is(err, ErrExpiredAuth)
 	// A record without a fingerprint was written by the sign-in callback for
 	// this very token; anything else may name a different account.
 	if stored.FP == "" {
-		return stored.Account
+		return stored.Account, expired
 	}
-	return model.Account{}
+	return model.Account{}, expired
 }
 
 // userInfo asks Google who a token belongs to.
