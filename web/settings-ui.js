@@ -1852,8 +1852,9 @@
         return;
       }
 
-      const t = e.target.closest('button, input');
+      const t = e.target.closest('button, input, [data-oauth-slot]');
       if (!t) return;
+      if (t.getAttribute('aria-disabled') === 'true') return;
       const d = t.dataset;
 
       if (d.themeChoice) {
@@ -2056,7 +2057,7 @@
         commitOrder(row.parentElement, row.dataset.sortId);
         return;
       }
-      if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-nav]') && t.tagName !== 'BUTTON') {
+      if ((e.key === 'Enter' || e.key === ' ') && t.matches('[data-nav], [data-oauth-slot]') && t.tagName !== 'BUTTON') {
         e.preventDefault();
         t.click();
         return;
