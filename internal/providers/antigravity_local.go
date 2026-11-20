@@ -162,6 +162,21 @@ func fetchLocalStatus(ctx context.Context, d *Deps, hub hubDiscovery) (userStatu
 
 // discoverHub finds the newest hub_*.json whose process is still alive.
 func discoverHub() (hubDiscovery, error) {
+	candidates := hubCandidates()
+	if len(candidates) == 0 {
+		return hubDiscovery{}, fmt.Errorf("no IDE discovery file found")
+	}
+	for _, hub := range candidates {
+		if processAlive(hub.PID) {
+			return hub, nil
+		}
+	}
+	return hubDiscovery{}, fmt.Errorf("no running IDE process found")
+}
+
+// hubCandidates reads every discovery file the IDE wrote, newest first. Liveness
+// is the caller's business: the version is worth knowing after the IDE quits.
+func hubCandidates() []hubDiscovery {
 	var candidates []hubDiscovery
 	for _, root := range hubRoots {
 		dir := expandHome(root)
@@ -193,16 +208,20 @@ func discoverHub() (hubDiscovery, error) {
 			candidates = append(candidates, hub)
 		}
 	}
-	if len(candidates) == 0 {
-		return hubDiscovery{}, fmt.Errorf("no IDE discovery file found")
-	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].modified.After(candidates[j].modified) })
-	for _, hub := range candidates {
-		if processAlive(hub.PID) {
-			return hub, nil
+	return candidates
+}
+
+// hubClientVersion is the hub release the installed IDE runs, read from its
+// discovery file. The quota endpoint gates groups on it, so it must come from
+// the installation rather than a constant.
+func hubClientVersion() string {
+	for _, hub := range hubCandidates() {
+		if v := strings.TrimSpace(hub.Version); v != "" {
+			return v
 		}
 	}
-	return hubDiscovery{}, fmt.Errorf("no running IDE process found")
+	return hubClientFallbackVersion
 }
 
 // localTLSClient accepts the language server's self-signed certificate. It only
@@ -215,9 +234,8 @@ var localTLSClient = &http.Client{
 	},
 }
 
-// fetchLocalPools asks the IDE for the grouped quota summary. This is the only
-// source that reports the weekly window for Gemini: the public REST variant
-// returns the third-party group only.
+// fetchLocalPools asks the IDE for the grouped quota summary, the same pools
+// the Cloud Code API returns to the hub identity.
 func fetchLocalPools(ctx context.Context, d *Deps, hub hubDiscovery) []poolSeries {
 	body, err := callLanguageServer(ctx, d, hub, quotaSummaryRPC, map[string]any{})
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +28,11 @@ import (
 //   - the API lives on three hosts, daily first, then the sandbox, then prod
 //   - loadCodeAssist with metadata.ideType=ANTIGRAVITY reveals the subscription
 //     tier and the cloudaicompanion project
-//   - retrieveUserQuotaSummary exposes the grouped 5h / weekly quota pools
+//   - retrieveUserQuotaSummary exposes the grouped 5h / weekly quota pools, but
+//     Google withholds groups from clients it does not recognise: the bare
+//     "antigravity" identity gets the third-party group alone, a versioned
+//     identity also gets the Gemini group, and only the hub/cli identity gets
+//     the Gemini 4 Argon group (a separate weekly-only allowance on Pro plans)
 type Antigravity struct{}
 
 // Antigravity's own OAuth client. Installed-app client secrets are not secret
@@ -390,10 +395,42 @@ type poolSeries struct {
 	reset     *time.Time
 }
 
+// antigravityHubUserAgent is the identity the IDE's own hub client presents.
+// Google gates quota groups on it: the Gemini group needs a versioned identity,
+// the Argon group needs the hub/cli shape. Without it a Pro account is told it
+// has no Gemini pool at all.
+func antigravityHubUserAgent() string {
+	return fmt.Sprintf("antigravity/hub/%s (aidev_client; os_type=%s; arch=%s)",
+		hubClientVersion(), uaOS(), uaArch())
+}
+
+// hubClientFallbackVersion is used while no IDE discovery file names one. It is
+// the hub release Gauge was last checked against; the version cache is the
+// live source.
+const hubClientFallbackVersion = "2.33.0"
+
+func uaOS() string {
+	switch runtime.GOOS {
+	case "darwin", "windows", "linux":
+		return runtime.GOOS
+	}
+	return "linux"
+}
+
+func uaArch() string {
+	switch runtime.GOARCH {
+	case "arm64", "amd64":
+		return runtime.GOARCH
+	case "386":
+		return "386"
+	}
+	return "amd64"
+}
+
 // quotaSummary returns the grouped 5-hour / weekly pools. Best effort: older
 // accounts get 404 here and that is fine.
 func quotaSummary(ctx context.Context, d *Deps, auth *Auth) []poolSeries {
-	body, err := postCloudCode(ctx, d, auth, "/v1internal:retrieveUserQuotaSummary", map[string]any{})
+	body, err := postCloudCodeAs(ctx, d, auth, antigravityHubUserAgent(), "/v1internal:retrieveUserQuotaSummary", map[string]any{})
 	if err != nil {
 		if !errors.Is(err, ErrExpiredAuth) {
 			d.Log.Printf("antigravity: quota summary unavailable: %v", err)
@@ -452,12 +489,16 @@ func windowLabel(window string) string {
 	return window
 }
 
-// groupFamily maps a quota-summary group name onto a model family.
+// groupFamily maps a quota-summary group name onto a model family. Argon is
+// listed before Gemini: a Pro plan's Argon allowance is its own weekly-only
+// bucket, not part of the Gemini pool.
 func groupFamily(name string) string {
 	l := strings.ToLower(name)
 	switch {
 	case strings.Contains(l, "claude") || strings.Contains(l, "gpt"):
 		return "claude"
+	case strings.Contains(l, "argon"):
+		return "argon"
 	case strings.Contains(l, "gemini"):
 		return "gemini"
 	}
@@ -486,9 +527,15 @@ func poolLabel(group, window string) string {
 	return name + " · " + window
 }
 
-// postCloudCode walks the host chain until one answers. Auth failures never
-// fall through: the token, not the host, is the problem.
+// postCloudCode walks the host chain until one answers as the bare client
+// identity. Model requests keep it; only the quota summary needs the hub one.
 func postCloudCode(ctx context.Context, d *Deps, auth *Auth, path string, payload any) ([]byte, error) {
+	return postCloudCodeAs(ctx, d, auth, "antigravity", path, payload)
+}
+
+// postCloudCodeAs walks the host chain until one answers. Auth failures never
+// fall through: the token, not the host, is the problem.
+func postCloudCodeAs(ctx context.Context, d *Deps, auth *Auth, userAgent, path string, payload any) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -502,7 +549,7 @@ func postCloudCode(ctx context.Context, d *Deps, auth *Auth, path string, payloa
 		}
 		req.Header.Set("Authorization", "Bearer "+auth.Token)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "antigravity")
+		req.Header.Set("User-Agent", userAgent)
 		for key, vals := range auth.Header {
 			for _, v := range vals {
 				req.Header.Add(key, v)
@@ -645,7 +692,13 @@ func mergeFamilies(models []model.Snapshot, pools []poolSeries, credits []model.
 		if len(series) == 0 {
 			continue
 		}
-		out = append(out, familyCard(fam.key, fam.label, series, len(byFamily[fam.key])))
+		card := familyCard(fam.key, fam.label, series, len(byFamily[fam.key]))
+		if fam.key == "gemini" {
+			// Argon's allowance is drawn separately from the Gemini pool, so it
+			// rides along as its own row and does not pull the card down.
+			card.Series = append(card.Series, dedicatedSeries("Argon", poolByFamily["argon"])...)
+		}
+		out = append(out, card)
 	}
 
 	if card, ok := otherCard(credits, others); ok {
@@ -712,6 +765,21 @@ func familyCard(key, label string, series []model.Series, modelCount int) model.
 		Series:    series,
 		UpdatedAt: time.Now().UTC(),
 	}
+}
+
+// dedicatedSeries renders a pool one model family owns on its own, keeping its
+// window label readable next to the shared ones.
+func dedicatedSeries(name string, pools []poolSeries) []model.Series {
+	out := make([]model.Series, 0, len(pools))
+	for _, p := range pools {
+		out = append(out, model.Series{
+			Label:     name + " · " + p.label,
+			Remaining: p.remaining,
+			Total:     100,
+			ResetAt:   p.reset,
+		})
+	}
+	return out
 }
 
 // buildSeries prefers the pool windows; per-model values are the fallback when
