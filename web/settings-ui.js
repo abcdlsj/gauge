@@ -460,7 +460,7 @@
       return `
         <span class="sx-badge sx-badge-photo" style="--tint: ${SOURCE_META.google.tint}">
           ${SOURCE_META.google.icon}
-          <img data-avatar src="/api/avatar/${g.slot}" alt="" />
+          <img data-avatar src="/api/avatar/${g.slot}?for=${encodeURIComponent(g.email || '')}" alt="" />
           <span class="sx-badge-mark" aria-hidden="true">${GaugeIcons.svg('google', 8)}</span>
         </span>`;
     }
@@ -487,7 +487,7 @@
       return `
         <span class="sx-avatar">
           <span class="sx-avatar-init">${esc(initial)}</span>
-          <img data-avatar src="/api/avatar/${acc.slot}" alt="" />
+          <img data-avatar src="/api/avatar/${acc.slot}?for=${encodeURIComponent(acc.email || '')}" alt="" />
         </span>`;
     }
 

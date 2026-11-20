@@ -45,11 +45,10 @@ type Deps struct {
 	Proxy  *Proxy
 	Log    *log.Logger
 
-	mu         sync.Mutex
-	tokens     map[string]cachedToken
-	browser    *browsercookie.Chrome
-	accounts   []model.Account
-	accountsAt time.Time
+	mu       sync.Mutex
+	tokens   map[string]cachedToken
+	browser  *browsercookie.Chrome
+	accounts []model.Account
 }
 
 // minInterval is the floor each collector will accept from settings.
@@ -80,17 +79,11 @@ func (d *Deps) IntervalOverride(ctx context.Context, name string, def time.Durat
 	return out
 }
 
-// AccountSource is implemented by providers that know about signed-in accounts.
-type AccountSource interface {
-	Accounts(ctx context.Context) []model.Account
-}
-
 // SetAccounts refreshes the cached identity list and persists it, so the
 // window can paint avatars before the first collection finishes.
 func (d *Deps) SetAccounts(ctx context.Context, list []model.Account) {
 	d.mu.Lock()
 	d.accounts = list
-	d.accountsAt = time.Now()
 	d.mu.Unlock()
 
 	if raw, err := json.Marshal(list); err == nil {
@@ -110,24 +103,16 @@ func (d *Deps) LoadCachedAccounts(ctx context.Context) {
 	}
 	d.mu.Lock()
 	d.accounts = list
-	d.accountsAt = time.Now().Add(-2 * time.Hour) // force a refresh soon
 	d.mu.Unlock()
 }
 
-// Accounts returns the cached identities, refreshing them when stale.
+// Accounts returns the identities the last Antigravity collection reported.
 func (d *Deps) Accounts() []model.Account {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	out := make([]model.Account, len(d.accounts))
 	copy(out, d.accounts)
 	return out
-}
-
-// AccountsStale reports whether the cache needs a refresh.
-func (d *Deps) AccountsStale() bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return time.Since(d.accountsAt) > time.Minute
 }
 
 type cachedToken struct {

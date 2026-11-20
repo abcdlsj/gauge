@@ -15,8 +15,10 @@ import (
 	"github.com/abcdlsj/gauge/internal/model"
 )
 
-// Antigravity collects per-model quota from the Cloud Code private API, the same
-// endpoint the Antigravity IDE's language server calls.
+// Antigravity collects model quota for up to three Google accounts. Account 1
+// is read from the running IDE's language server (antigravity_local.go); the
+// Cloud Code private API below is its fallback and the only source for
+// accounts 2 and 3, which exist through Gauge's own sign-in.
 //
 // Findings that shape this file (verified against AntigravityqQuotaWatcher,
 // Antigravity-Manager and antigravity-panel):
@@ -113,6 +115,11 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 
 	if err != nil {
 		if len(extra) == 0 {
+			// The engine leaves stored readings alone for an unconfigured
+			// source; flag them so they do not pass for current numbers.
+			if errors.Is(err, ErrNotConfigured) {
+				_ = d.Store.MarkProviderStatus(ctx, "antigravity", model.StatusError)
+			}
 			return nil, err
 		}
 		// The other accounts answered, and their readings replace the stored

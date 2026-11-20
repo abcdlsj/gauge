@@ -168,7 +168,7 @@ function renderAccountLine(a, detail) {
   const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
   return `
     <div class="src-account">
-      <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}" alt="" onerror="this.remove()" /></span>
+      <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}?for=${encodeURIComponent(a.email || '')}" alt="" onerror="this.remove()" /></span>
       <span class="who"><b>${esc(a.account_name || a.name || a.email || '')}</b>${(a.account_name || a.name) && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
       ${detail ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(detail)}</span>` : ''}
     </div>`;

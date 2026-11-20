@@ -96,7 +96,7 @@ var settingSections = []sectionDef{
 			{Key: "gcp_billing_table", Label: "Billing export table", Kind: "text", Placeholder: "project.dataset.gcp_billing_export_v1_…", Help: "Standard usage cost export in BigQuery."},
 			{Key: "gcp_initial_credits", Label: "Initial credits", Kind: "number", Placeholder: "447.27", Help: "Starting balance used to derive the remaining amount."},
 			{Key: "gcp_currency", Label: "Currency", Kind: "text", Placeholder: "HKD", Default: "HKD"},
-			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Fallback when no ADC is found.", Sensitive: true, Optional: true},
+			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Used when no GCP refresh token is set, before the ADC file. Antigravity account 1 also falls back to it.", Sensitive: true, Optional: true},
 			{Key: "gcp_sa_json", Label: "Service account JSON", Kind: "secret", Multiline: true, Placeholder: `{"type":"service_account", …}`, Help: "Takes precedence over the refresh token.", Sensitive: true, Optional: true},
 			interval("gcp-billing", "Billing", 360, 60),
 			interval("gcp-monitoring", "Monitoring", 10, 10),
@@ -544,11 +544,15 @@ func (a *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = a.store.Delete(ctx, fmt.Sprintf("antigravity_account_%d", slot))
 	a.engine.ResetCooldown()
+	// Re-collect now: until it runs, the removed account keeps its group and
+	// its "@N" readings.
+	go a.engine.RunOnce(context.Background(), "antigravity", true)
 	writeJSON(w, http.StatusOK, map[string]any{"removed": slot})
 }
 
 // handleAvatar serves the cached profile image. Browsers cache it, so the
-// window paints instantly on the next launch.
+// window paints instantly on the next launch; the pages add the account's
+// email as a query so a slot that changes account does not keep the old face.
 func (a *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	slot, err := strconv.Atoi(r.PathValue("slot"))
 	if err != nil {
