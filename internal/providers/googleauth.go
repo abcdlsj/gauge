@@ -19,13 +19,8 @@ import (
 	"time"
 )
 
-// Gemini CLI's OAuth client, used only when a token comes from its own
-// credential file (a refresh token is bound to the client that minted it).
-const (
-	geminiClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
-	geminiClientSecret = "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"
-	tokenEndpoint      = "https://oauth2.googleapis.com/token"
-)
+// tokenEndpoint trades a refresh token for an access token.
+const tokenEndpoint = "https://oauth2.googleapis.com/token"
 
 // AuthSource selects which credential set a collector should use. Antigravity
 // and Cloud APIs usually belong to different accounts, so the panel keeps two
@@ -109,18 +104,11 @@ func (d *Deps) resolveCreds(ctx context.Context, src AuthSource) (credMaterial, 
 			d.Setting(ctx, "antigravity_refresh_token"),
 			d.Setting(ctx, "google_refresh_token"),
 		)
-		// A token read from Gemini CLI must keep using Gemini CLI's client.
-		fromCLI := c.refreshToken == ""
-		if fromCLI {
-			c.refreshToken = geminiCLIRefreshToken(ctx, d)
+		if c.refreshToken == "" {
+			c.refreshToken = antigravityLocalRefreshToken()
 		}
-		if fromCLI {
-			c.clientID = d.SettingDefault(ctx, "google_client_id", geminiClientID)
-			c.clientSecret = d.SettingDefault(ctx, "google_client_secret", geminiClientSecret)
-		} else {
-			c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
-			c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
-		}
+		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
+		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
 	case strings.HasPrefix(string(src), string(SourceAntigravityAlt)):
 		// The caller passes the slot in the source name itself ("antigravity-2"),
 		// so this arm cannot be a constant case.
@@ -322,17 +310,6 @@ func adcPath(ctx context.Context, d *Deps) string {
 		return expandHome(p)
 	}
 	return expandHome("~/.config/gcloud/application_default_credentials.json")
-}
-
-// geminiCLIRefreshToken reads Gemini CLI's own credential file. The panel only
-// reads it; the CLI keeps owning and rotating that token.
-func geminiCLIRefreshToken(ctx context.Context, d *Deps) string {
-	path := expandHome(d.SettingDefault(ctx, "antigravity_creds_path", "~/.gemini/oauth_creds.json"))
-	raw := readJSONFile(path)
-	if raw == nil {
-		return ""
-	}
-	return stringField(raw, "refresh_token")
 }
 
 func readJSONFile(path string) map[string]any {

@@ -63,7 +63,7 @@ var settingSections = []sectionDef{
 		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
 		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{
-			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Only when the IDE is closed.", Sensitive: true, Optional: true},
+			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Overrides the token the clients own. Leave empty to use agy's own token file.", Sensitive: true, Optional: true},
 			{Key: "browser_cookies", Label: "Read cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Flow and Colab reuse the Chrome sign-in. One keychain prompt."},
 			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Sensitive: true, Optional: true},
 			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Sensitive: true, Optional: true},

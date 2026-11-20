@@ -42,9 +42,16 @@ activity log, and settings — anything token-, cookie- or secret-shaped is
 encrypted before it is written. There is no server, no telemetry, no analytics.
 
 Read-only, never modified: `~/.gemini/antigravity/daemon/hub_*.json`,
-`~/.gemini/oauth_creds.json`, `~/.config/gcloud/application_default_credentials.json`,
-and Chrome's `Cookies` / `Local State` (copied to `$TMPDIR` for the read, then
-deleted).
+`~/.config/gcloud/application_default_credentials.json`, and Chrome's `Cookies`
+/ `Local State` (copied to `$TMPDIR` for the read, then deleted).
+
+## Which Antigravity versions
+
+The collectors read the sign-in that Antigravity 2.x and agy 1.5 or newer keep:
+the language server's loopback RPC, or the token file under `~/.gemini`. Earlier
+versions kept the credential in `state.vscdb` and `~/.gemini/oauth_creds.json`;
+Gauge neither reads nor writes those, so an older client reports only what its
+IDE's language server answers.
 
 ## What it collects
 
@@ -132,7 +139,7 @@ are often different accounts:
 
 | Chain | Order |
 | --- | --- |
-| Antigravity | `antigravity_refresh_token` → `google_refresh_token` → `~/.gemini/oauth_creds.json` |
+| Antigravity | `antigravity_refresh_token` → `google_refresh_token` → `~/.gemini/antigravity-cli/antigravity-oauth-token` → `~/.gemini/jetski-standalone-oauth-token` |
 | GCP | `gcp_sa_json` → ADC file → `gcp_refresh_token` → `google_refresh_token` |
 
 **Settings → General → Network** holds the proxy every upstream request takes.
