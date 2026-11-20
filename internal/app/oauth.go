@@ -232,8 +232,9 @@ func signInEmail(ctx context.Context, st *store.Store, slot int) string {
 
 // placeSignIn picks the slot a new sign-in lands in. An account Gauge already
 // shows keeps its slot, so signing in again refreshes it instead of adding a
-// copy; the IDE's own account always becomes slot 1's fallback. Anything else
-// takes the slot the user asked for.
+// copy. The account the IDE is on may take slot 1 as that account's fallback;
+// any other sign-in gets a slot of its own, because it has to outlive whichever
+// account the IDE happens to use.
 func placeSignIn(ctx context.Context, st *store.Store, asked int, email string) (int, string) {
 	if slot := providers.AntigravitySlotFor(ctx, st, email); slot > 0 {
 		switch {
@@ -250,6 +251,11 @@ func placeSignIn(ctx context.Context, st *store.Store, asked int, email string) 
 	}
 	if asked == 1 {
 		if ide := providers.AntigravityIDEEmail(ctx, st); ide != "" && email != "" && !strings.EqualFold(ide, email) {
+			// Asking for slot 1 while the IDE is on someone else would tie this
+			// sign-in to the IDE's next choice, so give it a slot of its own.
+			if free := freeSignInSlot(ctx, st); free > 0 {
+				return free, fmt.Sprintf("Connected %s as account %d. The IDE is on %s, so the sign-in stays with %s.", email, free, ide, email)
+			}
 			return 1, fmt.Sprintf("Connected %s. The IDE uses %s, so this sign-in is only read while the IDE is closed.", email, ide)
 		}
 	}
@@ -257,6 +263,17 @@ func placeSignIn(ctx context.Context, st *store.Store, asked int, email string) 
 		return asked, "Account connected."
 	}
 	return asked, fmt.Sprintf("Connected %s.", email)
+}
+
+// freeSignInSlot is the first extra slot Gauge holds no sign-in for.
+func freeSignInSlot(ctx context.Context, st *store.Store) int {
+	for slot := 2; slot <= providers.MaxInstances(); slot++ {
+		v, ok, err := st.Get(ctx, fmt.Sprintf("antigravity_refresh_token_%d", slot))
+		if err == nil && (!ok || v == "") {
+			return slot
+		}
+	}
+	return 0
 }
 
 // exchange trades the authorization code for a refresh token.

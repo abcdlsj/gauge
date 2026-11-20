@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -202,36 +203,42 @@ func startIDE(t *testing.T, email string) {
 	t.Cleanup(func() { hubRoots = orig })
 }
 
-// TestIDEWithoutPoolsDoesNotBorrowAnotherAccount checks the Cloud Code
-// fallback is skipped when Gauge's sign-in is a different account.
+// TestIDEWithoutPoolsDoesNotBorrowAnotherAccount checks the IDE's card never
+// takes the sign-in of a different account: that account gets a slot of its own
+// and the IDE's card keeps only what the IDE reported.
 func TestIDEWithoutPoolsDoesNotBorrowAnotherAccount(t *testing.T) {
 	ctx := context.Background()
 	d := newTestDeps(t)
 	startIDE(t, "ide@x")
-	calls := fakeGoogle(t, map[string]string{"rt1": "other@x"})
+	fakeGoogle(t, map[string]string{"rt1": "other@x"})
 	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
 
 	snaps, err := (Antigravity{}).Collect(ctx, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls.Load() != 0 {
-		t.Fatalf("read quota with another account's token")
+	if d.Setting(ctx, "antigravity_refresh_token") != "" || d.Setting(ctx, "antigravity_refresh_token_2") != "rt1" {
+		t.Fatalf("the sign-in did not move off slot 1")
 	}
-	if len(snaps) != 1 || snaps[0].Metric != "other_models" {
-		t.Fatalf("want the IDE's credits only, got %+v", snaps)
+	accounts := d.Accounts()
+	if len(accounts) != 2 || accounts[0].Email != "ide@x" || accounts[1].Email != "other@x" {
+		t.Fatalf("accounts = %+v", accounts)
 	}
-	if a := d.Accounts(); len(a) != 1 || a[0].Email != "ide@x" {
-		t.Fatalf("accounts = %+v", a)
+	for _, sn := range snaps {
+		if sn.Metric == "gemini_models" {
+			t.Fatalf("the IDE's card took another account's quota: %+v", sn)
+		}
 	}
 
-	// Same account: the fallback is allowed.
-	calls2 := fakeGoogle(t, map[string]string{"rt1": "ide@x"})
-	_ = d.Store.Delete(ctx, identityKey(1))
-	if _, err := (Antigravity{}).Collect(ctx, d); err != nil {
+	// Same account: the sign-in stays on slot 1 and stands in for the IDE.
+	same := newTestDeps(t)
+	startIDE(t, "ide@x")
+	calls := fakeGoogle(t, map[string]string{"rt1": "ide@x"})
+	_ = same.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+	if _, err := (Antigravity{}).Collect(ctx, same); err != nil {
 		t.Fatal(err)
 	}
-	if calls2.Load() != 1 {
+	if calls.Load() != 1 {
 		t.Fatalf("fallback not used for the same account")
 	}
 }
@@ -259,5 +266,134 @@ func TestAntigravityIgnoresTheGCPChain(t *testing.T) {
 	}
 	if c, _ := d.resolveCreds(ctx, SourceGCP); c.refreshToken != "gcp-rt" || c.clientID != "gcp-client" {
 		t.Fatalf("GCP chain lost its settings: %+v", c)
+	}
+}
+
+// fakeIDE serves a language-server mock for one account and points hub
+// discovery at it, so the collector sees that account through the IDE.
+func fakeIDE(t *testing.T, email string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case languageServerRPC:
+			_, _ = w.Write([]byte(`{"userStatus":{"name":"N","email":"` + email +
+				`","userTier":{"id":"g1-pro-tier","name":"Pro"}}}`))
+		case quotaSummaryRPC:
+			_, _ = w.Write([]byte(`{"response":{"groups":[{"displayName":"Gemini Models",
+				"buckets":[{"window":"5h","remainingFraction":0.8}]}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	raw, _ := json.Marshal(hubDiscovery{PID: os.Getpid(), HTTPPort: port, CSRFToken: "csrf"})
+	if err := os.WriteFile(filepath.Join(dir, "hub_1.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orig := hubRoots
+	hubRoots = []string{dir}
+	t.Cleanup(func() { hubRoots = orig })
+}
+
+// TestSignInFollowsTheAccountWhenTheIDESwitches covers an account that was
+// signed in while the IDE used it: when the IDE moves to another account, the
+// sign-in moves to its own slot instead of going dark.
+func TestSignInFollowsTheAccountWhenTheIDESwitches(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt1": "bob@x"})
+	fakeIDE(t, "alice@x")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+
+	snaps, err := (Antigravity{}).Collect(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "" {
+		t.Fatalf("slot 1 still holds a sign-in: %q", got)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token_2"); got != "rt1" {
+		t.Fatalf("slot 2 token = %q, want the moved sign-in", got)
+	}
+	accounts := d.Accounts()
+	if len(accounts) != 2 || accounts[0].Email != "alice@x" || accounts[0].Slot != 1 {
+		t.Fatalf("accounts = %+v", accounts)
+	}
+	if accounts[1].Email != "bob@x" || accounts[1].Slot != 2 || !accounts[1].OAuth {
+		t.Fatalf("account 2 = %+v, want bob over its own sign-in", accounts[1])
+	}
+	var slot2 bool
+	for _, sn := range snaps {
+		if sn.Metric == "gemini_models@2" {
+			slot2 = true
+		}
+	}
+	if !slot2 {
+		t.Fatalf("bob was not read from the cloud: %+v", snaps)
+	}
+}
+
+// TestSignInStaysOnSlotOneWhileTheIDEUsesIt is the other half: the same account
+// on both channels keeps the sign-in where it is, as the IDE's fallback.
+func TestSignInStaysOnSlotOneWhileTheIDEUsesIt(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt1": "bob@x"})
+	fakeIDE(t, "bob@x")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+
+	if _, err := (Antigravity{}).Collect(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "rt1" {
+		t.Fatalf("slot 1 token = %q, want it left alone", got)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token_2"); got != "" {
+		t.Fatalf("slot 2 token = %q, want nothing moved", got)
+	}
+}
+
+// TestIDEClosedDoesNotRepeatAnAccountWithItsOwnSlot: the IDE shutting down is
+// not worth a second row for an account another slot already reads.
+func TestIDEClosedDoesNotRepeatAnAccountWithItsOwnSlot(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	noIDE(t)
+	fakeGoogle(t, map[string]string{"rt2": "bob@x"})
+	d.rememberIDEAccount(ctx, lastSeen("bob@x"))
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+
+	if _, err := (Antigravity{}).Collect(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	accounts := d.Accounts()
+	if len(accounts) != 1 || accounts[0].Slot != 2 || accounts[0].Email != "bob@x" {
+		t.Fatalf("accounts = %+v, want only the sign-in's own slot", accounts)
+	}
+}
+
+// TestPromoteSignInNeedsAFreeSlotLeavesTheFallback: with every extra slot taken
+// the sign-in stays on slot 1 as the IDE's fallback.
+func TestPromoteSignInNeedsAFreeSlotLeavesTheFallback(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt1": "bob@x"})
+	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_3", "rt3")
+
+	d.promoteSignIn(ctx, "alice@x")
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "rt1" {
+		t.Fatalf("slot 1 token = %q, want it kept", got)
 	}
 }

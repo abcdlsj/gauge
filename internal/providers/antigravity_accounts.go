@@ -36,6 +36,66 @@ type storedIdentity struct {
 
 func identityKey(slot int) string { return fmt.Sprintf("antigravity_account_%d", slot) }
 
+// refreshTokenKey is the setting that holds a slot's refresh token. Slot 1 keeps
+// the historical key without a suffix.
+func refreshTokenKey(slot int) string {
+	if slot <= 1 {
+		return "antigravity_refresh_token"
+	}
+	return fmt.Sprintf("antigravity_refresh_token_%d", slot)
+}
+
+// promoteSignIn moves slot 1's Gauge sign-in to a free account when the IDE has
+// moved to a different one. An account is a single identity with two possible
+// channels, so its sign-in belongs with the account rather than with the IDE's
+// current choice; left on slot 1 it would stop being read the moment the IDE
+// signed in anywhere else.
+func (d *Deps) promoteSignIn(ctx context.Context, ideEmail string) {
+	refresh := d.Setting(ctx, refreshTokenKey(1))
+	if refresh == "" || ideEmail == "" {
+		return
+	}
+	who, _ := d.signInIdentity(ctx, 1)
+	if who.Email == "" || strings.EqualFold(who.Email, ideEmail) {
+		return
+	}
+	target := 0
+	for slot := 2; slot <= maxAccounts; slot++ {
+		if d.Setting(ctx, refreshTokenKey(slot)) == "" {
+			target = slot
+			break
+		}
+	}
+	if target == 0 {
+		d.Log.Printf("antigravity: %s is signed in for account 1 and the IDE is on %s; no free account to move it to", who.Email, ideEmail)
+		return
+	}
+	if err := d.Store.Set(ctx, refreshTokenKey(target), refresh); err != nil {
+		d.Log.Printf("antigravity: moving %s's sign-in: %v", who.Email, err)
+		return
+	}
+	if id := d.loadIdentity(ctx, identityKey(1)); id.Email != "" {
+		d.saveIdentity(ctx, identityKey(target), id)
+	}
+	_ = d.Store.Delete(ctx, refreshTokenKey(1))
+	_ = d.Store.Delete(ctx, identityKey(1))
+	d.FlushTokens()
+	d.Log.Printf("antigravity: %s's sign-in moved from account 1 to account %d; the IDE now uses %s", who.Email, target, ideEmail)
+}
+
+// shownElsewhere reports whether another account already displays this email.
+func shownElsewhere(accounts []model.Account, email string) bool {
+	if email == "" {
+		return false
+	}
+	for _, a := range accounts {
+		if a.Email != "" && strings.EqualFold(a.Email, email) {
+			return true
+		}
+	}
+	return false
+}
+
 // sourceFor is the auth source of a slot's Gauge sign-in.
 func sourceFor(slot int) AuthSource {
 	if slot <= 1 {

@@ -103,6 +103,10 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 	local, ideUp := collectLocal(ctx, d)
 	if ideUp && local.account.Email != "" {
 		d.rememberIDEAccount(ctx, local.account)
+		// The IDE is one channel of an account, not the slot it lives in: a
+		// sign-in left behind on slot 1 moves out of the way when the IDE
+		// starts using a different account.
+		d.promoteSignIn(ctx, local.account.Email)
 	}
 
 	primary, snaps, err := collectPrimary(ctx, d, local, ideUp)
@@ -111,6 +115,15 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 		seen = primary.Email
 	}
 	extra, extraAccounts := collectExtraAccounts(ctx, d, seen)
+
+	// The IDE being closed is not news when its last account still has a
+	// sign-in of its own: that slot already shows it, so a second row would
+	// report the same account twice.
+	if err != nil && shownElsewhere(extraAccounts, primary.Email) {
+		d.Log.Printf("antigravity: account 1: %v; %s already has its own sign-in", err, primary.Email)
+		d.SetAccounts(ctx, extraAccounts)
+		return extra, nil
+	}
 
 	accounts := []model.Account{}
 	if primary.Email != "" {

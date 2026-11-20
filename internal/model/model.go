@@ -26,7 +26,7 @@ type Series struct {
 
 // Account is one signed-in Google identity the panel collects for.
 type Account struct {
-	Slot    int    `json:"slot"` // 1 = the IDE's account, 2+ = Gauge sign-ins only
+	Slot    int    `json:"slot"` // 1 = the IDE's account, 2+ = the account's own sign-in
 	Email   string `json:"email"`
 	Name    string `json:"name,omitempty"`
 	Tier    string `json:"tier,omitempty"`    // readable plan name
@@ -40,7 +40,9 @@ type Account struct {
 	DuplicateOf int `json:"duplicate_of,omitempty"`
 	// IDEEmail (slot 1 only) is the account the IDE is, or was last, signed
 	// in to; SignInEmail is the account of Gauge's own sign-in. They differ
-	// when the two were signed in with different accounts.
+	// when the two were signed in with different accounts. A sign-in left on
+	// slot 1 once the IDE moves on is shifted to a slot of its own, so an
+	// account keeps its OAuth channel whichever account the IDE uses.
 	IDEEmail    string `json:"ide_email,omitempty"`
 	SignInEmail string `json:"sign_in_email,omitempty"`
 	// AuthExpired is set when Google rejected the slot's Gauge sign-in the

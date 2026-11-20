@@ -27,9 +27,10 @@ func newPlaceStore(t *testing.T) *store.Store {
 	return st
 }
 
-// TestPlaceSignIn covers where a sign-in lands: the IDE's account always
-// becomes slot 1's fallback, a connected account keeps its slot, anything
-// else takes the slot asked for.
+// TestPlaceSignIn covers where a sign-in lands: the account the IDE is on
+// becomes slot 1's fallback, a connected account keeps its slot, anything else
+// takes the slot asked for — or a free one when slot 1 would tie it to the IDE's
+// current account.
 func TestPlaceSignIn(t *testing.T) {
 	ctx := context.Background()
 	st := newPlaceStore(t)
@@ -47,7 +48,7 @@ func TestPlaceSignIn(t *testing.T) {
 		{3, "two@x", 2, "already connected as account 2"},
 		{2, "two@x", 2, "signed in again"},
 		{3, "new@x", 3, "Connected new@x"},
-		{1, "other@x", 1, "only read while the IDE is closed"},
+		{1, "other@x", 3, "the sign-in stays with other@x"},
 		{1, "", 1, "Account connected"},
 	}
 	for _, tc := range cases {
