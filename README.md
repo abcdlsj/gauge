@@ -87,8 +87,10 @@ Antigravity shows up to three Google accounts side by side.
   runs: the IDE only knows the one account it is signed in to.
 - A sign-in lands by account, not by the button pressed: the IDE's account
   always becomes account 1's fallback, an account already connected is renewed
-  in its own slot, and anything else takes the next free slot. An account that
-  still appears twice is read once, under the earlier slot.
+  in its own slot, and anything else takes the next free slot. A sign-in that
+  outlived the IDE's earlier account comes back to account 1 when the IDE signs
+  in to it again, so one account keeps both of its channels on one row. An
+  account that still appears twice is read once, under the earlier slot.
 
 Flow and Colab read the first Google account of the Chrome session (or the
 pasted cookie). Gauge asks `accounts.google.com/ListAccounts` with the same

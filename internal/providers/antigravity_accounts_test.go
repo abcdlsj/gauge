@@ -363,6 +363,76 @@ func TestSignInStaysOnSlotOneWhileTheIDEUsesIt(t *testing.T) {
 	}
 }
 
+// TestSignInReturnsToSlotOneWhenTheIDESignsInAgain is the case a separate
+// account's sign-in runs into: the IDE switches to the account that already had
+// a slot of its own. One account, two channels, one row.
+func TestSignInReturnsToSlotOneWhenTheIDESignsInAgain(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt2": "bob@x"})
+	fakeIDE(t, "bob@x")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+
+	if _, err := (Antigravity{}).Collect(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "rt2" {
+		t.Fatalf("slot 1 token = %q, want the sign-in brought back", got)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token_2"); got != "" {
+		t.Fatalf("slot 2 still holds a sign-in: %q", got)
+	}
+	accounts := d.Accounts()
+	if len(accounts) != 1 || accounts[0].Slot != 1 || accounts[0].Email != "bob@x" || !accounts[0].OAuth {
+		t.Fatalf("accounts = %+v, want bob alone on slot 1 with both channels", accounts)
+	}
+	if accounts[0].DuplicateOf != 0 {
+		t.Fatalf("account 1 reported as a duplicate of itself: %+v", accounts[0])
+	}
+}
+
+// TestSecondSignInForTheIDEAccountIsDropped: two slots can end up holding the
+// same account when it was signed in to Gauge twice, once before the IDE moved
+// and once after. Slot 1 is the one that stays.
+func TestSecondSignInForTheIDEAccountIsDropped(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt1": "bob@x", "rt2": "bob@x"})
+	fakeIDE(t, "bob@x")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+
+	if _, err := (Antigravity{}).Collect(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "rt1" {
+		t.Fatalf("slot 1 token = %q, want it kept", got)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token_2"); got != "" {
+		t.Fatalf("slot 2 token = %q, want the copy dropped", got)
+	}
+	if accounts := d.Accounts(); len(accounts) != 1 || accounts[0].Slot != 1 {
+		t.Fatalf("accounts = %+v, want one row", accounts)
+	}
+}
+
+// TestAdoptSignInLeavesAnotherAccountAlone: the account the IDE is on is not
+// on an extra slot, so nothing moves.
+func TestAdoptSignInLeavesAnotherAccountAlone(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	fakeGoogle(t, map[string]string{"rt2": "carol@x"})
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+
+	d.adoptSignIn(ctx, "bob@x")
+	if got := d.Setting(ctx, "antigravity_refresh_token"); got != "" {
+		t.Fatalf("slot 1 token = %q, want nothing moved", got)
+	}
+	if got := d.Setting(ctx, "antigravity_refresh_token_2"); got != "rt2" {
+		t.Fatalf("slot 2 token = %q, want it left alone", got)
+	}
+}
+
 // TestIDEClosedDoesNotRepeatAnAccountWithItsOwnSlot: the IDE shutting down is
 // not worth a second row for an account another slot already reads.
 func TestIDEClosedDoesNotRepeatAnAccountWithItsOwnSlot(t *testing.T) {

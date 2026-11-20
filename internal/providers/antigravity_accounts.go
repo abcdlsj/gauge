@@ -83,6 +83,53 @@ func (d *Deps) promoteSignIn(ctx context.Context, ideEmail string) {
 	d.Log.Printf("antigravity: %s's sign-in moved from account 1 to account %d; the IDE now uses %s", who.Email, target, ideEmail)
 }
 
+// adoptSignIn brings a sign-in back to slot 1 when the IDE signs in to the same
+// account. An account is one identity with two channels, so the IDE and Gauge's
+// own sign-in belong on one row: left on slot 2 the account would show twice,
+// once as the IDE's and once as a sign-in of its own, and the fallback would
+// sit in the wrong slot.
+func (d *Deps) adoptSignIn(ctx context.Context, ideEmail string) {
+	if ideEmail == "" {
+		return
+	}
+	for slot := 2; slot <= maxAccounts; slot++ {
+		if !d.hasSignIn(ctx, slot) {
+			continue
+		}
+		who, _ := d.signInIdentity(ctx, slot)
+		if who.Email == "" || !strings.EqualFold(who.Email, ideEmail) {
+			continue
+		}
+		if d.Setting(ctx, refreshTokenKey(1)) != "" {
+			// Slot 1 already holds a sign-in, kept there by promoteSignIn
+			// because the IDE is on its account. A second copy of the same
+			// account is what the panel would list twice.
+			one, _ := d.signInIdentity(ctx, 1)
+			if !strings.EqualFold(one.Email, who.Email) {
+				return
+			}
+			_ = d.Store.Delete(ctx, refreshTokenKey(slot))
+			_ = d.Store.Delete(ctx, identityKey(slot))
+			d.FlushTokens()
+			d.Log.Printf("antigravity: account %d held a second sign-in for %s; dropped it", slot, who.Email)
+			return
+		}
+		token := d.Setting(ctx, refreshTokenKey(slot))
+		if err := d.Store.Set(ctx, refreshTokenKey(1), token); err != nil {
+			d.Log.Printf("antigravity: moving %s's sign-in to account 1: %v", who.Email, err)
+			return
+		}
+		if id := d.loadIdentity(ctx, identityKey(slot)); id.Email != "" {
+			d.saveIdentity(ctx, identityKey(1), id)
+		}
+		_ = d.Store.Delete(ctx, refreshTokenKey(slot))
+		_ = d.Store.Delete(ctx, identityKey(slot))
+		d.FlushTokens()
+		d.Log.Printf("antigravity: %s's sign-in moved from account %d to account 1; the IDE now uses it", who.Email, slot)
+		return
+	}
+}
+
 // shownElsewhere reports whether another account already displays this email.
 func shownElsewhere(accounts []model.Account, email string) bool {
 	if email == "" {

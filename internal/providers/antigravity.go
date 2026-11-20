@@ -105,8 +105,10 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 		d.rememberIDEAccount(ctx, local.account)
 		// The IDE is one channel of an account, not the slot it lives in: a
 		// sign-in left behind on slot 1 moves out of the way when the IDE
-		// starts using a different account.
+		// starts using a different account, and a sign-in that already lives
+		// on an extra slot comes back when the IDE signs in to it.
 		d.promoteSignIn(ctx, local.account.Email)
+		d.adoptSignIn(ctx, local.account.Email)
 	}
 
 	primary, snaps, err := collectPrimary(ctx, d, local, ideUp)
