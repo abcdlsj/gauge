@@ -431,6 +431,19 @@ async function load() {
   }
 }
 
+// settleHome re-reads Home a few times after an addition. The first read is
+// usually still the list the collector is about to replace, and the 20 s tick
+// would leave the new cards looking missing until then.
+let settleTimer = 0;
+function settleHome(times = 8) {
+  clearTimeout(settleTimer);
+  const tick = () => {
+    load();
+    if (--times > 0) settleTimer = setTimeout(tick, 1200);
+  };
+  tick();
+}
+
 /* ---------- settings view ---------- */
 
 // The settings pages are drawn by web/settings-ui.js; this file only swaps
@@ -471,6 +484,13 @@ const settingsUI = GaugeSettings.create({
   onSaved() {
     load();
     requestAnimationFrame(syncScrollDepth);
+  },
+  onAdded() {
+    // A source that was just added has cards on Home, nowhere else. The
+    // collector that fills them runs after the callback answers, so Home is
+    // re-read until they arrive instead of sitting on the old list.
+    closeSettings();
+    settleHome();
   },
   onRender() {
     fitWindow();

@@ -451,6 +451,10 @@
       confirmRemove = false;
       pendingDir = 'back';
       render();
+      // Whatever the page behind shows may have changed while the deeper one
+      // was open (a sign-in, a saved key, a collector pass), so the index is
+      // re-read instead of trusting the copy loaded on the way in.
+      reloadSection();
       return true;
     }
 
@@ -2089,6 +2093,9 @@
     async function startOAuth(slotMode) {
       let path = '/api/oauth/start';
       let slot = 1;
+      // A sign-in started from Add is an addition; one started on an account's
+      // own page renews that account.
+      const added = slotMode === 'next' || Boolean(route && route.kind === 'add');
       if (slotMode === 'next') {
         const used = new Set(accountsList().map((a) => a.slot));
         slot = [1, 2, 3].find((s) => !used.has(s)) || 0;
@@ -2115,7 +2122,22 @@
           } catch (_) { /* keep polling */ }
           if (st && st.done) {
             clearInterval(timer);
-            toast(st.ok ? (st.message || 'Google account connected').replace(/ You can close this tab.*$/, '') : `Sign-in failed: ${st.message}`);
+            if (!st.ok) {
+              toast(`Sign-in failed: ${st.message}`);
+              await reloadSection();
+              if (opts.onSaved) opts.onSaved();
+              return;
+            }
+            toast((st.message || 'Google account connected').replace(/ You can close this tab.*$/, ''));
+            // Adding lands on Home: the new account's cards are there, and this
+            // page has nothing left to show. Renewing an existing sign-in stays
+            // where it is, so the row that was just fixed is not jumped away
+            // from.
+            if (added && opts.onAdded) {
+              if (opts.onSaved) opts.onSaved();
+              opts.onAdded();
+              return;
+            }
             await reloadSection();
             if (opts.onSaved) opts.onSaved();
             setTimeout(async () => { await reloadSection(); if (opts.onSaved) opts.onSaved(); }, 4000);
