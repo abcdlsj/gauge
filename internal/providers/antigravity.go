@@ -117,9 +117,10 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 	extra, extraAccounts := collectExtraAccounts(ctx, d, seen)
 
 	// The IDE being closed is not news when its last account still has a
-	// sign-in of its own: that slot already shows it, so a second row would
-	// report the same account twice.
-	if err != nil && shownElsewhere(extraAccounts, primary.Email) {
+	// sign-in of its own that answered: that slot already shows it, so a second
+	// row would report the same account twice. A silent slot 1 would instead
+	// leave its last readings looking current, so a failed read keeps the error.
+	if err != nil && len(extra) > 0 && shownElsewhere(extraAccounts, primary.Email) {
 		d.Log.Printf("antigravity: account 1: %v; %s already has its own sign-in", err, primary.Email)
 		d.SetAccounts(ctx, extraAccounts)
 		return extra, nil

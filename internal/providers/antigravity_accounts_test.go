@@ -397,3 +397,28 @@ func TestPromoteSignInNeedsAFreeSlotLeavesTheFallback(t *testing.T) {
 		t.Fatalf("slot 1 token = %q, want it kept", got)
 	}
 }
+
+// TestIDEClosedKeepsTheErrorWhenItsOwnSignInFails: dropping slot 1 for an
+// account that has its own slot must not turn a failed read into a success,
+// which would leave the last numbers on screen looking current.
+func TestIDEClosedKeepsTheErrorWhenItsOwnSignInFails(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	noIDE(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	origHosts, origUser, origToken := cloudCodeHosts, userInfoEndpoint, tokenEndpoint
+	cloudCodeHosts = []string{srv.URL}
+	userInfoEndpoint = srv.URL + "/userinfo"
+	tokenEndpoint = srv.URL + "/token"
+	t.Cleanup(func() { cloudCodeHosts, userInfoEndpoint, tokenEndpoint = origHosts, origUser, origToken })
+
+	d.rememberIDEAccount(ctx, lastSeen("bob@x"))
+	_ = d.Store.Set(ctx, "antigravity_refresh_token_2", "rt2")
+
+	if _, err := (Antigravity{}).Collect(ctx, d); err == nil {
+		t.Fatal("a failed read reported success; slot 1's last readings would pass for current ones")
+	}
+}
