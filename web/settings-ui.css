@@ -145,6 +145,7 @@
 .sx-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 22%, transparent); }
 .sx-item.is-hidden > .sx-badge,
 .sx-item.is-hidden > .sx-item-main { opacity: 0.45; }
+.sx-item:hover .sx-tag { background: color-mix(in srgb, var(--text) 9%, var(--surface-2)); }
 .sx-trail { flex: none; font-size: 11.5px; color: var(--faint); }
 .sx-item.is-disabled { opacity: 0.52; cursor: default; }
 .sx-item.is-disabled:hover { background: transparent; }
@@ -220,6 +221,34 @@
   :root:not([data-theme="light"]) .sx-badge { background: color-mix(in srgb, var(--tint) 22%, transparent); }
 }
 :root[data-theme="dark"] .sx-badge { background: color-mix(in srgb, var(--tint) 22%, transparent); }
+
+/* A Google row with a photo: the same rounded square, the photo on top of
+   the tinted G (which shows while it loads or when it fails), and a small G
+   in the corner once the photo is in. */
+.sx-badge-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+.sx-badge-mark {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: none;
+  place-items: center;
+  color: var(--gemini);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--bg);
+}
+.sx-badge-photo.has-photo .sx-badge-mark { display: grid; }
+.sx-badge-mark svg { display: block; }
 
 .sx-avatar {
   position: relative;

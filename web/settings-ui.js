@@ -109,6 +109,10 @@
       tint: 'var(--sx-neutral)',
       icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="6.3" cy="9" r="2.7" fill="none" stroke="currentColor" stroke-width="1.65"/><path fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" d="M9 9h5.8M12.7 9v2.2"/></svg>',
     },
+    add: {
+      tint: 'var(--sx-neutral)',
+      icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M9 4.5v9M4.5 9h9"/></svg>',
+    },
     schedule: {
       tint: 'var(--sx-neutral)',
       icon: '<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="5.8" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M9 5.8V9l2.3 1.4"/></svg>',
@@ -173,6 +177,7 @@
     root.addEventListener('load', (e) => {
       if (e.target && e.target.matches && e.target.matches('img[data-avatar]')) {
         e.target.parentElement?.querySelector('.sx-avatar-init')?.remove();
+        e.target.parentElement?.classList.add('has-photo');
       }
     }, true);
 
@@ -441,6 +446,33 @@
       return `<span class="sx-badge" style="--tint: ${meta.tint}">${meta.icon}</span>`;
     }
 
+    // groupBadge is the list square for one subscription. A signed-in Google
+    // identity shows its own photo, so two Google accounts tell apart at a
+    // glance; a small G in the corner keeps the source readable. Until the
+    // photo loads, or when it fails, the tinted G square shows instead.
+    function groupBadge(g) {
+      const isGoogle = g.id === 'google' || g.id.startsWith('google-');
+      if (!isGoogle || !g.picture || !g.slot) return sourceBadge(g.id);
+      return `
+        <span class="sx-badge sx-badge-photo" style="--tint: ${SOURCE_META.google.tint}">
+          ${SOURCE_META.google.icon}
+          <img data-avatar src="/api/avatar/${g.slot}" alt="" />
+          <span class="sx-badge-mark" aria-hidden="true">${GaugeIcons.svg('google', 8)}</span>
+        </span>`;
+    }
+
+    // isSetUp reports whether a subscription has been connected at all. Extra
+    // slots only exist once the user added them; slot 1 always exists, so it
+    // needs a card or a collector that got past "not configured". A first run
+    // still in flight is not evidence either way, so it does not count.
+    const SET_UP = ['ok', 'warning', 'error', 'expired_auth'];
+    function isSetUp(g) {
+      if (!g) return false;
+      if (instanceOf(g.id)) return true;
+      if ((g.items || []).length) return true;
+      return runsForProviders(g.providers || []).some((r) => SET_UP.includes(r.status));
+    }
+
     // The one badge style: plan tiers, account names, slot numbers, limits.
     function tag(text) {
       return text ? `<span class="sx-tag">${esc(text)}</span>` : '';
@@ -590,7 +622,8 @@
     /* ---------- Level 1: Index ---------- */
 
     function renderIndex() {
-      const groups = layoutGroups().filter((g) => section(g.id));
+      // Sources nobody connected stay out of the list; Add is where they live.
+      const groups = layoutGroups().filter((g) => section(g.id) && isSetUp(g));
 
       const groupRows = groups.map((g) => {
         const sec = section(g.id) || {};
@@ -603,7 +636,7 @@
         return `
           <div class="sx-item sx-sortrow${g.hidden ? ' is-hidden' : ''}" data-sort-id="${esc(g.id)}" data-nav="${esc(g.id)}" role="button" tabindex="0">
             ${handle(g.account_name || g.email || g.title)}
-            ${sourceBadge(g.id)}
+            ${groupBadge(g)}
             <div class="sx-item-main">
               <div class="sx-item-top"><b>${esc(title)}</b>${tag(plan)}</div>
               <div class="sx-item-sub">${groupTelemetry(g, provs)}</div>
@@ -623,11 +656,13 @@
         <section class="sx-sec">
           <div class="sx-eyebrow-bar">
             <span class="sx-eyebrow">Subscriptions</span>
-            <button class="sx-eyebrow-link" type="button" data-nav="add">+ Add</button>
+            ${groupRows ? '<button class="sx-eyebrow-link" type="button" data-nav="add">+ Add</button>' : ''}
           </div>
-          <div class="sx-list sx-sortlist" data-sort="groups">
+          ${groupRows ? `<div class="sx-list sx-sortlist" data-sort="groups">
             ${groupRows}
-          </div>
+          </div>` : `<div class="sx-list">
+            ${navRow('add', 'add', 'Add a subscription', subLine(null, 'Google AI, Command Code, Open Design, GCP'))}
+          </div>`}
         </section>
         <section class="sx-sec">
           <div class="sx-eyebrow-bar">
@@ -844,12 +879,12 @@
     function renderAdd() {
       const accounts = accountsList();
       const groups = layoutGroups();
-      const ccPrimary = primaryConfigured('commandcode', 'commandcode_api_key');
+      const ccPrimary = primaryConfigured('commandcode', 'commandcode_api_key') || isSetUp(groupOf('commandcode'));
       const ccExtras = groups.filter((g) => g.id.startsWith('commandcode-')).length;
       const ccCount = (ccPrimary ? 1 : 0) + ccExtras;
       const ccTotalSlots = groups.filter((g) => g.id === 'commandcode' || g.id.startsWith('commandcode-')).length;
 
-      const odPrimary = primaryConfigured('opendesign', 'opendesign_control_key');
+      const odPrimary = primaryConfigured('opendesign', 'opendesign_control_key') || isSetUp(groupOf('opendesign'));
       const odExtras = groups.filter((g) => g.id.startsWith('opendesign-')).length;
       const odCount = (odPrimary ? 1 : 0) + odExtras;
       const odTotalSlots = groups.filter((g) => g.id === 'opendesign' || g.id.startsWith('opendesign-')).length;
@@ -859,6 +894,9 @@
       const gcpTbl = gcpSec && gcpSec.fields.find((f) => f.key === 'gcp_billing_table');
       const gcpReady = Boolean(gcpProj && gcpProj.configured && gcpTbl && gcpTbl.configured);
 
+      const googleCount = Math.max(accounts.length, isSetUp(groupOf('google')) ? 1 : 0);
+      const gcpSetUp = isSetUp(groupOf('gcp'));
+      const countTag = (n) => tag(n ? `${n} of 3` : 'Not set up');
       const googleAtMax = accounts.length >= 3;
       const googleAction = googleAtMax
         ? 'aria-disabled="true"'
@@ -877,9 +915,9 @@
               ${sourceBadge('google')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google AI Account</b></div>
-                <div class="sx-item-sub">${subLine(null, 'OAuth', SOURCE_META.google.desc)}</div>
+                <div class="sx-item-sub">${subLine(null, SOURCE_META.google.desc)}</div>
               </div>
-              ${tag(`${accounts.length} of 3`)}
+              ${countTag(googleCount)}
               ${googleAtMax ? '' : CHEVRON}
             </div>
 
@@ -887,9 +925,9 @@
               ${sourceBadge('commandcode')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Command Code Account</b></div>
-                <div class="sx-item-sub">${subLine(null, 'API key', SOURCE_META.commandcode.desc)}</div>
+                <div class="sx-item-sub">${subLine(null, SOURCE_META.commandcode.desc)}</div>
               </div>
-              ${tag(`${ccCount} of 3`)}
+              ${countTag(ccCount)}
               ${ccFull ? '' : CHEVRON}
             </div>
 
@@ -897,9 +935,9 @@
               ${sourceBadge('opendesign')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Open Design Account</b></div>
-                <div class="sx-item-sub">${subLine(null, 'Control key', SOURCE_META.opendesign.desc)}</div>
+                <div class="sx-item-sub">${subLine(null, SOURCE_META.opendesign.desc)}</div>
               </div>
-              ${tag(`${odCount} of 3`)}
+              ${countTag(odCount)}
               ${odFull ? '' : CHEVRON}
             </div>
 
@@ -907,8 +945,9 @@
               ${sourceBadge('gcp')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google Cloud</b></div>
-                <div class="sx-item-sub">${subLine(gcpReady ? null : { status: 'unconfigured', text: 'Not set up' }, SOURCE_META.gcp.desc)}</div>
+                <div class="sx-item-sub">${subLine(null, 'BigQuery billing & Gemini API')}</div>
               </div>
+              ${tag(gcpSetUp ? 'Connected' : 'Not set up')}
               ${CHEVRON}
             </div>
           </div>
@@ -1519,7 +1558,12 @@
         .concat(arr.filter((x) => !ids.includes(x.id)));
       const target = list.dataset.sort;
       if (target === 'groups') {
-        overview.layout = pick(layoutGroups());
+        // The list may skip sources that are not set up. They keep their
+        // stored slot; only the listed groups trade places among themselves.
+        const all = layoutGroups();
+        const listed = new Set(ids);
+        const moved = ids.map((id) => all.find((g) => g.id === id)).filter(Boolean);
+        overview.layout = all.map((g) => (listed.has(g.id) ? moved.shift() || g : g));
       } else if (target.startsWith('items:')) {
         const g = groupOf(target.slice(6));
         if (g) g.items = pick(g.items);

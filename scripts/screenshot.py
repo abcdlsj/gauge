@@ -49,6 +49,7 @@ def fixture_layout() -> list:
     return [
         {"id": "google", "title": "Google AI Ultra", "detail": "Ultra 5x", "hidden": False,
          "slot": 1, "email": "songjian.li@gmail.com", "account_name": "Lisong Jian",
+         "picture": "https://lh3.googleusercontent.com/a/fixture",
          "providers": ["antigravity", "google-flow", "colab"],
          "items": [
              item("antigravity/gemini_models", "Antigravity · Gemini"),
@@ -146,6 +147,89 @@ def fixture_overview() -> dict:
             {"provider": "gcp-billing", "metric": "month_to_date_cost", "label": "Month to date", "remaining": 12.4, "total": 0, "unit": "USD", "status": "ok", "updated_at": now(-timedelta(minutes=5))},
         ],
     }
+
+
+def fixture_overview_fresh() -> dict:
+    """A first launch: every collector ran and found nothing to read."""
+    ov = fixture_overview()
+    ov["accounts"] = []
+    ov["quotas"] = []
+    ov["runs"] = [{"provider": r["provider"], "status": "unconfigured", "last_run": r["last_run"],
+                   "error": "not configured", "duration_ms": 2} for r in ov["runs"]]
+    ov["layout"] = [
+        {"id": "google", "title": "Google AI", "hidden": False, "providers": ["antigravity", "google-flow", "colab"], "items": []},
+        {"id": "commandcode", "title": "Command Code", "hidden": False, "providers": ["commandcode"], "slot": 1, "items": []},
+        {"id": "opendesign", "title": "Open Design", "hidden": False, "providers": ["opendesign"], "slot": 1, "items": []},
+        {"id": "gcp", "title": "Google Cloud", "hidden": False, "providers": ["gcp-monitoring", "gcp-billing"], "items": []},
+    ]
+    return ov
+
+
+def fixture_overview_google_only() -> dict:
+    """Only the Google account is signed in; the other sources are untouched."""
+    ov = fixture_overview()
+    google = {"antigravity", "google-flow", "colab"}
+    ov["quotas"] = [q for q in ov["quotas"] if q["provider"] in google]
+    ov["runs"] = [r if r["provider"] in google else
+                  {"provider": r["provider"], "status": "unconfigured", "last_run": r["last_run"],
+                   "error": "not configured", "duration_ms": 2} for r in ov["runs"]]
+    fresh = {g["id"]: g for g in fixture_overview_fresh()["layout"]}
+    layout = [g if g["id"] == "google" else fresh[g["id"]] for g in ov["layout"]]
+    # A second Google identity, so the list shows two photos side by side.
+    layout.insert(1, {"id": "google-2", "title": "Google AI Pro", "detail": "Pro", "hidden": False,
+                      "slot": 2, "email": "gauge.test@gmail.com", "account_name": "Gauge Test",
+                      "picture": "https://lh3.googleusercontent.com/a/fixture-2",
+                      "providers": ["antigravity"], "items": []})
+    ov["layout"] = layout
+    ov["accounts"] = ov["accounts"] + [{"slot": 2, "email": "gauge.test@gmail.com", "name": "Gauge Test",
+                                        "tier": "Google AI Pro", "primary": False}]
+    return ov
+
+
+def fixture_settings_fresh() -> dict:
+    """Settings with nothing stored: every field back at its default."""
+    out = fixture_settings()
+    for sec in out["sections"]:
+        for f in sec["fields"]:
+            if f["kind"] != "number" and f["key"] != "browser_cookies":
+                f["configured"] = False
+                f["value"] = f.get("default", "")
+    return out
+
+
+def fixtures() -> dict:
+    """Fixture variants, picked by ?fixture= on the page URL."""
+    return {
+        "": (fixture_overview, fixture_settings),
+        "fresh": (fixture_overview_fresh, fixture_settings_fresh),
+        "google-only": (fixture_overview_google_only, fixture_settings),
+    }
+
+
+def avatar_png(slot: int = 1, size: int = 96) -> bytes:
+    """A stand-in profile photo: a head and shoulders on a backdrop that
+    differs per slot, so two accounts read as two people."""
+    base = [(214, 176, 140), (150, 182, 206), (176, 196, 160)][(slot - 1) % 3]
+    rows = []
+    for y in range(size):
+        row = bytearray([0])
+        for x in range(size):
+            t = y / size
+            r, g, b = int(base[0] - 40 * t), int(base[1] - 30 * t), int(base[2] - 20 * t)
+            hx, hy = x - size * 0.5, y - size * 0.40
+            if hx * hx + hy * hy < (size * 0.19) ** 2:
+                r, g, b = 246, 214, 186
+            sx, sy = x - size * 0.5, y - size * 1.02
+            if sx * sx / (size * 0.42) ** 2 + sy * sy / (size * 0.40) ** 2 < 1:
+                r, g, b = 58, 74, 104
+            row += bytes((r, g, b))
+        rows.append(bytes(row))
+
+    def chunk(ctype: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + ctype + data + struct.pack(">I", zlib.crc32(ctype + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"".join(rows), 6)) + chunk(b"IEND", b""))
 
 
 def fixture_proxy() -> dict:
@@ -316,10 +400,12 @@ TRAY_PREVIEW = """<!DOCTYPE html>
 # time budget expires yields a screenshot of a half-rendered page, so the
 # fixture is injected into the HTML as a fetch shim instead: every GET resolves
 # in a microtask, before the first paint.
-def api_fixture() -> dict:
+def api_fixture(variant: str = "") -> dict:
+    table = fixtures()
+    overview, settings = table.get(variant, table[""])
     return {
-        "/api/overview": fixture_overview(),
-        "/api/settings": fixture_settings(),
+        "/api/overview": overview(),
+        "/api/settings": settings(),
         "/api/update": fixture_update(),
     }
 
@@ -344,8 +430,8 @@ FETCH_SHIM = """<script>
 </script>"""
 
 
-def inject_fixture(html: str) -> str:
-    shim = FETCH_SHIM % json.dumps(api_fixture())
+def inject_fixture(html: str, variant: str = "") -> str:
+    shim = FETCH_SHIM % json.dumps(api_fixture(variant))
     return html.replace("<head>", "<head>\n" + shim, 1)
 
 
@@ -371,9 +457,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?")[0]
+        variant = self.path.partition("fixture=")[2].split("&")[0]
         match path:
             case "/popover.html":
-                self._send(inject_fixture((WEB / path.lstrip("/")).read_text()).encode(),
+                self._send(inject_fixture((WEB / path.lstrip("/")).read_text(), variant).encode(),
                            "text/html; charset=utf-8")
             case "/api/overview":
                 self._send_json(fixture_overview())
@@ -403,7 +490,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 icon = self.path.partition("icon=")[2].split("&")[0] or "gauge"
                 self._send(make_icons.web_mark_path(icon if icon in make_icons.MARKS else "gauge").read_bytes(), "image/svg+xml")
             case p if p.startswith("/api/avatar/"):
-                self.send_error(404)
+                # Home is shot without photos so its baseline stays put;
+                # Settings turns them on to show the avatar rows.
+                if getattr(self.server, "avatars", False):
+                    slot = p.removeprefix("/api/avatar/")
+                    self._send(avatar_png(int(slot) if slot.isdigit() else 1), "image/png")
+                else:
+                    self.send_error(404)
             case _:
                 super().do_GET()
 
@@ -541,6 +634,7 @@ def main() -> None:
         base = f"http://127.0.0.1:{port}"
         popover_shot(httpd, f"{base}/popover.html?theme=light", OUT / "popover-light.png")
         popover_shot(httpd, f"{base}/popover.html?theme=dark", OUT / "popover-dark.png")
+        httpd.avatars = True
         popover_shot(httpd, f"{base}/popover.html?settings=1&theme=light", OUT / "popover-settings.png")
         popover_shot(httpd, f"{base}/popover.html?settings=1&theme=dark", OUT / "popover-settings-dark.png")
         popover_shot(httpd, f"{base}/popover.html?settings=google&theme=light", OUT / "popover-settings-source.png")
@@ -554,6 +648,9 @@ def main() -> None:
         popover_shot(httpd, f"{base}/popover.html?settings=general/webhook&theme=light", OUT / "popover-settings-webhook.png")
         popover_shot(httpd, f"{base}/popover.html?settings=general/network&theme=light", OUT / "popover-settings-network.png")
         popover_shot(httpd, f"{base}/popover.html?settings=add/commandcode&theme=light", OUT / "popover-settings-add-instance.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=1&theme=light&fixture=fresh", OUT / "popover-settings-fresh.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=add&theme=light&fixture=fresh", OUT / "popover-settings-add-fresh.png")
+        popover_shot(httpd, f"{base}/popover.html?settings=1&theme=light&fixture=google-only", OUT / "popover-settings-google-only.png")
         shot(f"{base}/icon/preview.html", OUT / "app-icon.png", 900, 1200)
         shot(f"{base}/tray/preview.html", OUT / "tray-icon-readability.png", 900, 536)
         httpd.shutdown()
@@ -574,6 +671,9 @@ def main() -> None:
         "popover-settings-webhook.png",
         "popover-settings-network.png",
         "popover-settings-add-instance.png",
+        "popover-settings-fresh.png",
+        "popover-settings-add-fresh.png",
+        "popover-settings-google-only.png",
         "app-icon.png",
         "tray-icon-readability.png",
     ):
