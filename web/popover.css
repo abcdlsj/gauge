@@ -71,6 +71,13 @@ html[data-shell="popover"].is-measuring .scroll-area {
   min-height: 0 !important;
   overflow: visible !important;
 }
+/* .scroll-wrap lays its area out in a row, where flex: none sizes the area to
+   its longest unwrapped line. Text then measured on one line, the page came
+   out short, and the bottom of long pages (a remove row, the GCP form) was
+   cut off. Keep the measured width the real one. */
+html[data-shell="popover"].is-measuring .scroll-area {
+  width: 100% !important;
+}
 
 /* ---------- header ---------- */
 
