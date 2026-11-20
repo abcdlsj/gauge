@@ -98,6 +98,41 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts DESC);
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE quota_snapshots ADD COLUMN kind TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE quota_snapshots ADD COLUMN account TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE quota_snapshots ADD COLUMN series TEXT NOT NULL DEFAULT ''`)
+	return s.dropRetiredKeys(ctx)
+}
+
+// retiredKeys are settings no release reads any more. Dropping them keeps a
+// stale value from coming back if a later key reuses the name.
+var retiredKeys = []string{
+	// The slot-1 plan, overwritten by every extra account and never read.
+	"antigravity_tier",
+	// The account switch, which never shipped: its setting, the token it
+	// replaced, and the per-identity copies.
+	"antigravity_switch",
+	"antigravity_switch_previous_token",
+}
+
+// retiredKeyPatterns are LIKE patterns for retired keys that carry a slot.
+var retiredKeyPatterns = []string{
+	`antigravity\_switch\_token\_%`,
+}
+
+// dropRetiredKeys removes retiredKeys and retiredKeyPatterns. It is
+// idempotent, so it runs on every start.
+func (s *Store) dropRetiredKeys(ctx context.Context) error {
+	query := `DELETE FROM kv_store WHERE key IN (` + placeholders(len(retiredKeys)) + `)`
+	args := make([]any, 0, len(retiredKeys))
+	for _, k := range retiredKeys {
+		args = append(args, k)
+	}
+	if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("drop retired settings: %w", err)
+	}
+	for _, pattern := range retiredKeyPatterns {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM kv_store WHERE key LIKE ? ESCAPE '\'`, pattern); err != nil {
+			return fmt.Errorf("drop retired settings: %w", err)
+		}
+	}
 	return nil
 }
 

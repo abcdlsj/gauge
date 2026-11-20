@@ -155,11 +155,12 @@ are often different accounts:
 
 | Chain | Order |
 | --- | --- |
-| Antigravity account 1 | the running IDE (no credential) → `antigravity_refresh_token` (Gauge sign-in or pasted) → `google_refresh_token` |
+| Antigravity account 1 | the running IDE (no credential) → `antigravity_refresh_token` (Gauge sign-in or pasted) |
 | Antigravity accounts 2–3 | `antigravity_refresh_token_2` / `_3` (Gauge sign-in only) |
 | GCP | `gcp_sa_json` → ADC service account → `gcp_refresh_token` → `google_refresh_token` → ADC user credentials |
 
-A service account (`gcp_sa_json`) only authenticates the GCP chain: the
+The chains share nothing. `gcp_sa_json`, `google_refresh_token` and
+`google_client_id` / `google_client_secret` only feed the GCP chain: the
 Antigravity quota endpoint accepts tokens from the Antigravity OAuth client
 alone.
 

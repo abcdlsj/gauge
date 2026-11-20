@@ -96,7 +96,7 @@ var settingSections = []sectionDef{
 			{Key: "gcp_billing_table", Label: "Billing export table", Kind: "text", Placeholder: "project.dataset.gcp_billing_export_v1_…", Help: "Standard usage cost export in BigQuery."},
 			{Key: "gcp_initial_credits", Label: "Initial credits", Kind: "number", Placeholder: "447.27", Help: "Starting balance used to derive the remaining amount."},
 			{Key: "gcp_currency", Label: "Currency", Kind: "text", Placeholder: "HKD", Default: "HKD"},
-			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Used when no GCP refresh token is set, before the ADC file. Antigravity account 1 also falls back to it.", Sensitive: true, Optional: true},
+			{Key: "google_refresh_token", Label: "Refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Used when no GCP refresh token is set, before the ADC file.", Sensitive: true, Optional: true},
 			{Key: "gcp_sa_json", Label: "Service account JSON", Kind: "secret", Multiline: true, Placeholder: `{"type":"service_account", …}`, Help: "Takes precedence over the refresh token.", Sensitive: true, Optional: true},
 			interval("gcp-billing", "Billing", 360, 60),
 			interval("gcp-monitoring", "Monitoring", 10, 10),
@@ -479,9 +479,6 @@ func providersToRefresh(changed map[string]string) (targets []string, all bool) 
 			return nil, true
 		case key == "antigravity_refresh_token" || strings.HasPrefix(key, "antigravity_refresh_token_"):
 			targets = append(targets, "antigravity")
-		case key == "google_refresh_token":
-			// Both chains fall back to it.
-			targets = append(targets, "antigravity", "gcp-billing", "gcp-monitoring")
 		case key == "flow_cookie":
 			targets = append(targets, "google-flow")
 		case key == "colab_cookie":
@@ -493,7 +490,7 @@ func providersToRefresh(changed map[string]string) (targets []string, all bool) 
 		case key == "opendesign_control_key" || strings.HasPrefix(key, "opendesign_control_key_"):
 			targets = append(targets, "opendesign")
 		case key == "gcp_project_id" || key == "gcp_billing_table" || key == "gcp_initial_credits" ||
-			key == "gcp_currency" || key == "gcp_sa_json":
+			key == "gcp_currency" || key == "google_refresh_token" || key == "gcp_sa_json":
 			targets = append(targets, "gcp-billing", "gcp-monitoring")
 		}
 	}

@@ -104,23 +104,21 @@ func (d *Deps) resolveCreds(ctx context.Context, src AuthSource) (credMaterial, 
 	}
 
 	switch {
-	case src == SourceAntigravity:
-		// Only tokens Gauge was given: its own sign-in, or one pasted into
+	case src == SourceAntigravity || strings.HasPrefix(string(src), string(SourceAntigravityAlt)):
+		// Only tokens Gauge was given, through its own sign-in or pasted into
 		// settings. The clients' credential (Keychain, agy's token file) is
-		// theirs; Gauge reads the running IDE instead.
-		c.refreshToken = firstNonEmpty(
-			d.Setting(ctx, "antigravity_refresh_token"),
-			d.Setting(ctx, "google_refresh_token"),
-		)
-		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
-		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
-	case strings.HasPrefix(string(src), string(SourceAntigravityAlt)):
-		// The caller passes the slot in the source name itself ("antigravity-2"),
-		// so this arm cannot be a constant case.
-		slot := strings.TrimPrefix(string(src), string(SourceAntigravityAlt))
-		c.refreshToken = d.Setting(ctx, "antigravity_refresh_token_"+slot)
-		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
-		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
+		// theirs; Gauge reads the running IDE instead. Nothing here falls
+		// back to the GCP chain: its google_* token and client belong to a
+		// different OAuth client, which the quota endpoint rejects, and the
+		// client must be the one the sign-in used (oauthClient in app).
+		key := "antigravity_refresh_token"
+		if src != SourceAntigravity {
+			// The caller passes the slot in the source name ("antigravity-2").
+			key += "_" + strings.TrimPrefix(string(src), string(SourceAntigravityAlt))
+		}
+		c.refreshToken = d.Setting(ctx, key)
+		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", antigravityClientID)
+		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", antigravityClientSecret)
 	case src == SourceGCP:
 		adc := d.adcUserCreds(ctx)
 		c.refreshToken = firstNonEmpty(

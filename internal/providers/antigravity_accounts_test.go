@@ -235,3 +235,29 @@ func TestIDEWithoutPoolsDoesNotBorrowAnotherAccount(t *testing.T) {
 		t.Fatalf("fallback not used for the same account")
 	}
 }
+
+// TestAntigravityIgnoresTheGCPChain checks no google_* setting reaches the
+// Antigravity chain: neither the token nor the OAuth client.
+func TestAntigravityIgnoresTheGCPChain(t *testing.T) {
+	ctx := context.Background()
+	d := newTestDeps(t)
+	_ = d.Store.Set(ctx, "google_refresh_token", "gcp-rt")
+	_ = d.Store.Set(ctx, "google_client_id", "gcp-client")
+	_ = d.Store.Set(ctx, "google_client_secret", "gcp-secret")
+
+	if _, err := d.resolveCreds(ctx, SourceAntigravity); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("account 1 used the GCP token: %v", err)
+	}
+	if d.hasSignIn(ctx, 1) {
+		t.Fatal("account 1 reported as signed in through google_refresh_token")
+	}
+
+	_ = d.Store.Set(ctx, "antigravity_refresh_token", "rt1")
+	c, err := d.resolveCreds(ctx, SourceAntigravity)
+	if err != nil || c.clientID != antigravityClientID || c.clientSecret != antigravityClientSecret {
+		t.Fatalf("account 1 client = %q, %v; want the Antigravity client", c.clientID, err)
+	}
+	if c, _ := d.resolveCreds(ctx, SourceGCP); c.refreshToken != "gcp-rt" || c.clientID != "gcp-client" {
+		t.Fatalf("GCP chain lost its settings: %+v", c)
+	}
+}

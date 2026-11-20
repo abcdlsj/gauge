@@ -88,3 +88,35 @@ func TestEventsAreTrimmed(t *testing.T) {
 		t.Fatalf("event log not trimmed: %d", len(events))
 	}
 }
+
+// TestInitSchemaDropsRetiredKeys covers the cleanup of settings no release
+// reads, and that it spares the keys around them.
+func TestInitSchemaDropsRetiredKeys(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	retired := []string{"antigravity_tier", "antigravity_switch", "antigravity_switch_previous_token",
+		"antigravity_switch_token_1", "antigravity_switch_token_3"}
+	kept := []string{"antigravity_refresh_token_2", "antigravity_account_2", "antigravity_source",
+		"antigravity_switchX", "antigravity_ide_account"}
+	for _, k := range append(append([]string{}, retired...), kept...) {
+		if err := st.Set(ctx, k, "v"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Run twice: the cleanup must be idempotent.
+	for range 2 {
+		if err := st.InitSchema(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, k := range retired {
+		if _, ok, _ := st.Get(ctx, k); ok {
+			t.Fatalf("%s survived", k)
+		}
+	}
+	for _, k := range kept {
+		if _, ok, _ := st.Get(ctx, k); !ok {
+			t.Fatalf("%s was dropped", k)
+		}
+	}
+}
