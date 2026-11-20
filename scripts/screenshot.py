@@ -286,7 +286,7 @@ def fixture_settings() -> dict:
                  field("gcp_billing_table", "Billing export table", "text", placeholder="project.dataset.gcp_billing_export_v1_…", help="Standard usage cost export in BigQuery."),
                  field("gcp_initial_credits", "Initial credits", "number", "447.27", help="Starting balance used to derive the remaining amount."),
                  field("gcp_currency", "Currency", "text", default="HKD", placeholder="HKD"),
-                 field("google_refresh_token", "Refresh token", "secret", optional=True, help="Fallback when no ADC is found."),
+                 field("google_refresh_token", "Refresh token", "secret", optional=True, help="Used when no GCP refresh token is set, before the ADC file."),
                  field("gcp_sa_json", "Service account JSON", "secret", multiline=True, optional=True, help="Takes precedence over the refresh token."),
                  interval("gcp-billing", "Billing refresh", 360, 60),
                  interval("gcp-monitoring", "Monitoring refresh", 10, 10),
