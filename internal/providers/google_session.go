@@ -16,7 +16,8 @@ import (
 // Flow and Colab read the first account of the Chrome session (X-Goog-AuthUser
 // 0) and their replies do not say which one that is. ListAccounts is what
 // Chrome itself calls to name the accounts of a session; asked with the same
-// cookie, its first entry is the account Flow and Colab report for. The panel
+// cookie, its entry with authuser index 0 is the account Flow and Colab report
+// for. It only answers POST: a GET is a 400. The panel
 // uses it to put the two cards under the Google account they belong to.
 
 // listAccountsEndpoint is a variable so tests can point it at a local server.
@@ -51,10 +52,11 @@ func (d *Deps) sessionAccount(ctx context.Context, provider, cookie string) mode
 }
 
 func (d *Deps) listAccounts(ctx context.Context, cookie string) (model.Account, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listAccountsEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, listAccountsEndpoint, strings.NewReader(""))
 	if err != nil {
 		return model.Account{}, err
 	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Cookie", cookie)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0 Safari/537.36")
 	resp, err := d.Client.Do(req)
@@ -72,9 +74,12 @@ func (d *Deps) listAccounts(ctx context.Context, cookie string) (model.Account, 
 	return parseListAccounts(body)
 }
 
-// parseListAccounts reads the first account of the positional reply:
+// parseListAccounts reads the authuser-0 account of the positional reply:
 //
-//	["gaia.l.a.r", [["gaia.l.a", 1, "<name>", "<email>", "<photo>", ...], ...]]
+//	["gaia.l.a.r", [["gaia.l.a", 1, "<name>", "<email>", "<photo>", _, _, <authuser>, ...], ...]]
+//
+// An entry without the index counts as the first one, so a shorter reply still
+// names the session's first account.
 func parseListAccounts(body []byte) (model.Account, error) {
 	var top []json.RawMessage
 	if err := json.Unmarshal(body, &top); err != nil || len(top) < 2 {
@@ -84,6 +89,7 @@ func parseListAccounts(body []byte) (model.Account, error) {
 	if err := json.Unmarshal(top[1], &accounts); err != nil {
 		return model.Account{}, fmt.Errorf("ListAccounts: unexpected account list")
 	}
+	var first *model.Account
 	for _, entry := range accounts {
 		if len(entry) < 4 {
 			continue
@@ -98,7 +104,20 @@ func parseListAccounts(body []byte) (model.Account, error) {
 		if str(0) != "gaia.l.a" || !strings.Contains(str(3), "@") {
 			continue
 		}
-		return model.Account{Name: str(2), Email: str(3), Picture: str(4)}, nil
+		account := model.Account{Name: str(2), Email: str(3), Picture: str(4)}
+		var index *int
+		if len(entry) > 7 {
+			_ = json.Unmarshal(entry[7], &index)
+		}
+		if index != nil && *index == 0 {
+			return account, nil
+		}
+		if first == nil {
+			first = &account
+		}
+	}
+	if first != nil {
+		return *first, nil
 	}
 	return model.Account{}, fmt.Errorf("ListAccounts: no signed-in account")
 }

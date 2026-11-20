@@ -9,9 +9,16 @@ import (
 )
 
 func TestParseListAccounts(t *testing.T) {
-	body := []byte(`["gaia.l.a.r",[["gaia.l.a",1,"Ann","ann@x","https://lh3.googleusercontent.com/a",1,1,0],["gaia.l.a",1,"Bob","bob@x"]]]`)
+	// The shape ListAccounts returned for a real session (values replaced).
+	body := []byte(`["gaia.l.a.r",[["gaia.l.a",1,"Bob","bob@x","https://lh3.googleusercontent.com/b",0,0,1,null,1,"2"],` +
+		`["gaia.l.a",1,"Ann","ann@x","https://lh3.googleusercontent.com/a",1,1,0,null,1,"1"]]]`)
 	got, err := parseListAccounts(body)
 	if err != nil || got.Email != "ann@x" || got.Name != "Ann" || got.Picture == "" {
+		t.Fatalf("got %+v, %v; want the authuser-0 account", got, err)
+	}
+	// Without indices the first entry stands for authuser 0.
+	got, err = parseListAccounts([]byte(`["gaia.l.a.r",[["gaia.l.a",1,"Ann","ann@x"],["gaia.l.a",1,"Bob","bob@x"]]]`))
+	if err != nil || got.Email != "ann@x" {
 		t.Fatalf("got %+v, %v; want the first account", got, err)
 	}
 	for _, bad := range []string{`[]`, `["gaia.l.a.r",[]]`, `{"x":1}`, `["gaia.l.a.r",[["other",1,"n","no-at"]]]`} {
@@ -28,6 +35,10 @@ func TestSessionAccountIsAskedOncePerCookie(t *testing.T) {
 	d := newTestDeps(t)
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "GET is a 400 upstream", http.StatusBadRequest)
+			return
+		}
 		calls.Add(1)
 		email := "a@x"
 		if r.Header.Get("Cookie") == "SID=2" {
