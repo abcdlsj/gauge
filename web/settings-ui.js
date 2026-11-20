@@ -280,6 +280,8 @@
           email: g.email || (acc && acc.email) || '',
           tier: g.detail || (acc && acc.tier) || '',
           signedIn: Boolean(g.email || g.account_name || acc),
+          oauth: Boolean(acc && acc.oauth),
+          duplicateOf: (acc && acc.duplicate_of) || 0,
         };
       }
       if (acc) {
@@ -289,9 +291,11 @@
           email: acc.email || '',
           tier: acc.tier || '',
           signedIn: true,
+          oauth: Boolean(acc.oauth),
+          duplicateOf: acc.duplicate_of || 0,
         };
       }
-      return { slot, name: '', email: '', tier: '', signedIn: false };
+      return { slot, name: '', email: '', tier: '', signedIn: false, oauth: false, duplicateOf: 0 };
     }
 
     function accountInitial(acc) {
@@ -589,9 +593,12 @@
         const chrome = fields.find((f) => f.key === 'browser_cookies');
         const tok = fields.find((f) => f.key === 'antigravity_refresh_token');
         const src = overview && overview.sources && overview.sources.antigravity;
+        const oauth = (acc && acc.oauth) || (tok && tok.configured);
         const p1 = src === 'local_ide'
           ? 'Local IDE'
-          : ((acc && acc.signedIn) || (tok && tok.configured) ? 'OAuth ready' : 'OAuth unset');
+          : src === 'ide_offline'
+            ? 'IDE not running'
+            : (oauth ? 'OAuth ready' : 'OAuth unset');
         const p2 = chrome && chrome.value === 'chrome' ? 'Chrome cookies' : 'Manual cookies';
         return `${p1} · ${p2}`;
       }
@@ -1119,15 +1126,19 @@
     function renderOAuthCard(id) {
       const acc = resolveGoogleAccount(id);
       if (!acc) return '';
-      const btnText = acc.signedIn ? 'Re-authenticate' : 'Sign in with Google';
-      const btnClass = acc.signedIn ? 'sx-btn' : 'sx-btn primary';
+      // Slot 1 can be named by the IDE alone; the button follows Gauge's own
+      // sign-in.
+      const btnText = acc.oauth ? 'Re-authenticate' : 'Sign in with Google';
+      const btnClass = acc.oauth ? 'sx-btn' : 'sx-btn primary';
       const action = `<button class="${btnClass}" type="button" data-oauth-slot="${acc.slot}">${btnText}</button>`;
       return `
         <div class="sx-oauth-box">
           ${acc.signedIn ? googleAvatar(acc) : sourceBadge('google')}
           <div class="sx-oauth-info">
             <b>${esc(acc.signedIn ? (acc.name || acc.email || `Slot ${acc.slot}`) : 'Not signed in')}</b>
-            <span>${esc(acc.signedIn ? (acc.email || 'Google OAuth connected') : 'Connect via Google sign-in')}</span>
+            <span>${esc(acc.duplicateOf
+              ? `Same account as slot ${acc.duplicateOf}; its quota shows there`
+              : acc.signedIn ? (acc.email || 'Google OAuth connected') : 'Connect via Google sign-in')}</span>
           </div>
           ${action}
         </div>`;
@@ -1142,7 +1153,7 @@
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google OAuth</span></div>
             ${renderOAuthCard(id)}
-            <p class="sx-hint">Uses its own token. Flow and Colab stay on the primary account.</p>
+            <p class="sx-hint">Read through this Google sign-in only, from the Cloud Code API, whether or not the IDE runs. Flow and Colab stay on the primary account.</p>
           </section>`;
       }
 
@@ -1157,6 +1168,7 @@
           <section class="sx-sec">
             <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity OAuth</span></div>
             ${renderOAuthCard('google')}
+            <p class="sx-hint">Read from the running Antigravity IDE whenever it is open. This sign-in is the fallback while the IDE is closed.</p>
             ${tokenField ? `<div class="sx-list sx-list-inset">${renderField(tokenField)}</div>` : ''}
           </section>
           <section class="sx-sec">

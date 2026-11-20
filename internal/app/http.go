@@ -63,7 +63,7 @@ var settingSections = []sectionDef{
 		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
 		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{
-			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Overrides the token the clients own. Leave empty to use agy's own token file.", Sensitive: true, Optional: true},
+			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Read only while the IDE is closed. Leave empty to use the Gauge sign-in above.", Sensitive: true, Optional: true},
 			{Key: "browser_cookies", Label: "Read cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Flow and Colab reuse the Chrome sign-in. One keychain prompt."},
 			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Sensitive: true, Optional: true},
 			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Sensitive: true, Optional: true},
@@ -479,6 +479,9 @@ func providersToRefresh(changed map[string]string) (targets []string, all bool) 
 			return nil, true
 		case key == "antigravity_refresh_token" || strings.HasPrefix(key, "antigravity_refresh_token_"):
 			targets = append(targets, "antigravity")
+		case key == "google_refresh_token":
+			// Both chains fall back to it.
+			targets = append(targets, "antigravity", "gcp-billing", "gcp-monitoring")
 		case key == "flow_cookie":
 			targets = append(targets, "google-flow")
 		case key == "colab_cookie":
@@ -490,7 +493,7 @@ func providersToRefresh(changed map[string]string) (targets []string, all bool) 
 		case key == "opendesign_control_key" || strings.HasPrefix(key, "opendesign_control_key_"):
 			targets = append(targets, "opendesign")
 		case key == "gcp_project_id" || key == "gcp_billing_table" || key == "gcp_initial_credits" ||
-			key == "gcp_currency" || key == "google_refresh_token" || key == "gcp_sa_json":
+			key == "gcp_currency" || key == "gcp_sa_json":
 			targets = append(targets, "gcp-billing", "gcp-monitoring")
 		}
 	}
@@ -539,9 +542,7 @@ func (a *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if slot > 1 {
-		_ = a.store.Delete(ctx, fmt.Sprintf("antigravity_account_%d", slot))
-	}
+	_ = a.store.Delete(ctx, fmt.Sprintf("antigravity_account_%d", slot))
 	a.engine.ResetCooldown()
 	writeJSON(w, http.StatusOK, map[string]any{"removed": slot})
 }

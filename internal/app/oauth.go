@@ -151,12 +151,14 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 		renderCallback(w, false, "Could not store the credential: "+err.Error())
 		return
 	}
+	// Name the account right away so settings shows it before the first
+	// collection. The collector re-reads it against the token fingerprint.
 	if account, err := b.userInfo(ctx, access); err == nil {
-		if p.slot > 1 {
-			if raw, err := json.Marshal(account); err == nil {
-				_ = b.store.Set(ctx, fmt.Sprintf("antigravity_account_%d", p.slot), string(raw))
-			}
+		if raw, err := json.Marshal(account); err == nil {
+			_ = b.store.Set(ctx, fmt.Sprintf("antigravity_account_%d", p.slot), string(raw))
 		}
+	} else {
+		b.log.Printf("oauth: slot %d: cannot read who signed in: %v", p.slot, err)
 	}
 	b.engine.ResetCooldown("antigravity")
 	// Collect right away: the next scheduled pass is minutes away, and until

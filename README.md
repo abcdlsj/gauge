@@ -41,23 +41,27 @@ Everything Gauge produces stays in that folder: quota snapshots, run state, an
 activity log, and settings — anything token-, cookie- or secret-shaped is
 encrypted before it is written. There is no server, no telemetry, no analytics.
 
-Read-only, never modified: `~/.gemini/antigravity/daemon/hub_*.json`,
+Read-only, never modified: the Antigravity IDE's `hub_*.json` discovery file
+(under `~/.gemini/antigravity/daemon`, or the older `~/.gemini/antigravity-ide`,
+`~/.antigravity` and `~/.config/antigravity` layouts),
 `~/.config/gcloud/application_default_credentials.json`, and Chrome's `Cookies`
-/ `Local State` (copied to `$TMPDIR` for the read, then deleted).
+/ `Local State` (copied to `$TMPDIR` for the read, then deleted). Gauge does not
+read the Antigravity or agy credential: not the Keychain item, not agy's token
+file.
 
 ## Which Antigravity versions
 
-The collectors read the sign-in that Antigravity 2.x and agy 1.5 or newer keep:
-the language server's loopback RPC, or the token file under `~/.gemini`. Earlier
-versions kept the credential in `state.vscdb` and `~/.gemini/oauth_creds.json`;
-Gauge neither reads nor writes those, so an older client reports only what its
-IDE's language server answers.
+The local reading needs Antigravity 2.x, whose language server writes
+`hub_<port>.json`. Gauge reads no client credential of any version: not
+`state.vscdb` or `~/.gemini/oauth_creds.json` from older releases, and not the
+Keychain item or token file that Antigravity 2.x and agy keep now. Without the
+IDE running, only accounts signed in to Gauge itself report.
 
 ## What it collects
 
 | Provider | Cadence | Source |
 | --- | --- | --- |
-| Antigravity | 5 min | the IDE's own local language server; Cloud Code API when the IDE is closed |
+| Antigravity | 5 min | account 1: the IDE's own local language server, else the Cloud Code API with Gauge's sign-in; accounts 2–3: Cloud Code API with Gauge's sign-in |
 | Cloud Monitoring | 10 min | `api/request_count` — Gemini CLI calls today (Pacific) |
 | GCP billing | 6 h | BigQuery billing export, incremental over `_PARTITIONTIME` |
 | Colab | 30 min | `clients6.google.com` GetUserInfo — compute units, accelerator classes |
@@ -65,11 +69,23 @@ IDE's language server answers.
 | Command Code | 5 min | `/alpha/billing/credits` — 5-hour and weekly plan windows, credits; key from settings or `~/.commandcode/auth.json` |
 | Open Design | 5 min | workspace billing preflight — Design Plan windows, USD balance; control key from settings or `~/.amr/config.json` |
 
-Antigravity is read from the running IDE first: `hub_<port>.json` gives the pid,
-port and CSRF token of its language server, and Gauge makes the same loopback
-calls the IDE makes. No OAuth, no credentials, no extra session. Only when the
-IDE is closed does it fall back to a loopback OAuth flow, and the refresh token
-is encrypted into the database.
+Antigravity shows up to three Google accounts side by side.
+
+- **Account 1** is the one the IDE is signed in to. While the IDE runs, Gauge
+  reads it from there and nowhere else: `hub_<port>.json` gives the pid, port
+  and CSRF token of its language server, and Gauge makes the same loopback
+  calls the IDE makes. No OAuth, no credentials, no extra session. Gauge keeps
+  the account's name and avatar, so it stays listed when the IDE closes.
+- When the IDE is closed, or answers without quota pools, account 1 falls back
+  to the Cloud Code API through **Gauge's own Google sign-in**
+  (Settings → Google AI → Sign in, stored encrypted in the database). With the
+  IDE open, that fallback is used only if the sign-in is the same account as
+  the IDE's. With no sign-in, account 1 keeps its name and last readings and
+  reports that the IDE is not running.
+- **Accounts 2 and 3** exist only through Gauge's sign-in and always use the
+  Cloud Code API, whether or not the IDE runs: the IDE only knows the one
+  account it is signed in to.
+- An account signed in twice is read once, under the earlier slot.
 
 Billing keeps a cursor in the database instead of rescanning: each cycle reads at
 most one extra day of partitions.
@@ -83,7 +99,7 @@ most one extra day of partitions.
 | Antigravity quota | yes | yes | yes | yes |
 | Spend / billing | BigQuery credits, CLI calls, Colab CU, Flow credits | no | no | no |
 | Changes anything upstream | never | yes — it manages accounts | yes — IDE cache cleanup, auto-accept | no |
-| Multi-account | reads the account(s) you signed in with | yes, that is the point | single | single |
+| Multi-account | up to 3 side by side: the IDE's account plus 2 Gauge sign-ins | yes, that is the point | single | single |
 | Leaves the machine | no | reports/console | no | no |
 
 If what you want is to juggle several Antigravity accounts, use
@@ -100,7 +116,7 @@ Read it as: what Gauge does *not* do is most of the risk surface.
 | --- | --- | --- |
 | GCP billing / monitoring | OAuth + documented APIs | none |
 | Antigravity, local | loopback RPC to the IDE's own language server | none — same call the IDE makes |
-| Antigravity, IDE closed | OAuth with the client the desktop app ships | low; read-only, no other endpoints |
+| Antigravity, IDE closed or accounts 2–3 | Gauge's own OAuth sign-in with the client the desktop app ships | low; read-only, no other endpoints |
 | Colab / Flow | your browser cookie + the internal gRPC-Web endpoint the web UI uses | the real one — see below |
 
 The last row is the only one that leans on Google's "no automated access"
@@ -139,8 +155,13 @@ are often different accounts:
 
 | Chain | Order |
 | --- | --- |
-| Antigravity | `antigravity_refresh_token` → `google_refresh_token` → `~/.gemini/antigravity-cli/antigravity-oauth-token` → `~/.gemini/jetski-standalone-oauth-token` |
-| GCP | `gcp_sa_json` → ADC file → `gcp_refresh_token` → `google_refresh_token` |
+| Antigravity account 1 | the running IDE (no credential) → `antigravity_refresh_token` (Gauge sign-in or pasted) → `google_refresh_token` |
+| Antigravity accounts 2–3 | `antigravity_refresh_token_2` / `_3` (Gauge sign-in only) |
+| GCP | `gcp_sa_json` → ADC service account → `gcp_refresh_token` → `google_refresh_token` → ADC user credentials |
+
+A service account (`gcp_sa_json`) only authenticates the GCP chain: the
+Antigravity quota endpoint accepts tokens from the Antigravity OAuth client
+alone.
 
 **Settings → General → Network** holds the proxy every upstream request takes.
 Empty means automatic: `HTTPS_PROXY` / `HTTP_PROXY`, then the macOS system proxy

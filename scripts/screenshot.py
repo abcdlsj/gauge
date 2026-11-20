@@ -261,7 +261,7 @@ def fixture_settings() -> dict:
             {"id": "google", "title": "Google AI", "providers": ["antigravity", "google-flow", "colab"],
              "summary": "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
              "fields": [
-                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Only when the IDE is closed."),
+                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Read only while the IDE is closed. Leave empty to use the Gauge sign-in above."),
                  field("browser_cookies", "Read cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Flow and Colab reuse the Chrome sign-in. One keychain prompt."),
                  field("flow_cookie", "Flow cookie", "secret", multiline=True, optional=True),
                  field("colab_cookie", "Colab cookie", "secret", multiline=True, optional=True),

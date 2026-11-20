@@ -130,8 +130,12 @@ func TestAntigravityPrefersLocalIDEOverRemote(t *testing.T) {
 	if src := d.Setting(ctx, "antigravity_source"); src != "local_ide" {
 		t.Fatalf("antigravity_source = %q, want local_ide", src)
 	}
-	if tier := d.Setting(ctx, "antigravity_tier"); tier != "g1-pro-tier" {
-		t.Fatalf("antigravity_tier = %q, want g1-pro-tier", tier)
+	accounts := d.Accounts()
+	if len(accounts) != 1 || accounts[0].Email != "alice@example.com" || accounts[0].TierID != "g1-pro-tier" {
+		t.Fatalf("accounts = %+v, want the IDE's account", accounts)
+	}
+	if got := d.lastIDEAccount(ctx); got.Email != "alice@example.com" {
+		t.Fatalf("IDE account not remembered: %+v", got)
 	}
 }
 

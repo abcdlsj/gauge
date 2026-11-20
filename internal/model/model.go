@@ -26,13 +26,18 @@ type Series struct {
 
 // Account is one signed-in Google identity the panel collects for.
 type Account struct {
-	Slot    int    `json:"slot"` // 1 = primary (local IDE), 2+ = extra
+	Slot    int    `json:"slot"` // 1 = the IDE's account, 2+ = Gauge sign-ins only
 	Email   string `json:"email"`
 	Name    string `json:"name,omitempty"`
 	Tier    string `json:"tier,omitempty"`    // readable plan name
 	TierID  string `json:"tier_id,omitempty"` // raw id, kept internal
 	Picture string `json:"picture,omitempty"` // data URI or https URL
 	Primary bool   `json:"primary"`
+	// OAuth is set when Gauge holds its own sign-in for this slot.
+	OAuth bool `json:"oauth,omitempty"`
+	// DuplicateOf names the earlier slot already showing this account; its
+	// quota is not read twice.
+	DuplicateOf int `json:"duplicate_of,omitempty"`
 }
 
 // Snapshot is a single quota reading for one provider metric.

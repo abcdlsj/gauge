@@ -82,163 +82,176 @@ type loadCodeAssistResponse struct {
 	AllowedTiers []antigravityTier `json:"allowedTiers"`
 }
 
-// Collect prefers the running IDE: when its language server already reports the
-// grouped quota pools over loopback, the primary account skips the Cloud Code
-// API completely. Only when the IDE is closed (or returns no pools) does it
-// fall back to the Cloud Code API.
-func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
-	local, labels, credits, localPools, primary := collectLocal(ctx, d)
+// Sources recorded under antigravity_source for slot 1.
+const (
+	sourceLocalIDE   = "local_ide"   // the running IDE's language server
+	sourceCloudAPI   = "cloud_api"   // the Cloud Code API with Gauge's sign-in
+	sourceIDEOffline = "ide_offline" // IDE closed and no Gauge sign-in
+)
 
-	var result []model.Snapshot
-	if len(localPools) > 0 {
-		if primary.TierID != "" {
-			_ = d.Store.Set(ctx, "antigravity_tier", primary.TierID)
-		}
-		_ = d.Store.Set(ctx, "antigravity_source", "local_ide")
-		result = append(local, mergeFamilies(nil, localPools, credits)...)
-	} else {
-		models, remotePools, info, err := collectRemote(ctx, d, labels, SourceAntigravity)
-		if err != nil {
-			d.Log.Printf("antigravity: remote quota unavailable: %v", err)
-			if len(local) > 0 || len(credits) > 0 {
-				if card, ok := otherCard(credits, nil); ok {
-					local = append(local, card)
-				}
-				extra, extraAccounts := collectExtraAccounts(ctx, d)
-				local = append(local, extra...)
-				d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
-				_ = d.Store.Set(ctx, "antigravity_source", "local_ide")
-				return local, nil
-			}
-			// Extra accounts do not depend on the primary one: a 403 on slot 1
-			// must not hide the quota of an account that still answers.
-			extra, extraAccounts := collectExtraAccounts(ctx, d)
-			if len(extra) > 0 {
-				d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
-				_ = d.Store.Set(ctx, "antigravity_source", "cloud_api")
-				return extra, nil
-			}
-			return nil, err
-		}
-		if primary.Email == "" {
-			// The IDE is closed; the API still tells us the plan.
-			primary.Tier = firstNonEmpty(tierLabel(tierName(info)), primary.Tier)
-			primary.TierID = tierName(info)
-		}
-		_ = d.Store.Set(ctx, "antigravity_source", "cloud_api")
-		result = append(local, mergeFamilies(models, remotePools, credits)...)
+// Collect reads slot 1 from the running IDE whenever it answers; the Cloud Code
+// API is the fallback for that account. Slots 2 and 3 exist only through
+// Gauge's sign-in, so they always use the Cloud Code API.
+func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
+	local, ideUp := collectLocal(ctx, d)
+	if ideUp && local.account.Email != "" {
+		d.rememberIDEAccount(ctx, local.account)
 	}
 
-	// Extra accounts come from the OAuth flow; they only have the remote API.
-	extra, extraAccounts := collectExtraAccounts(ctx, d)
-	result = append(result, extra...)
+	primary, snaps, err := collectPrimary(ctx, d, local, ideUp)
+	seen := ""
+	if err == nil && len(snaps) > 0 {
+		seen = primary.Email
+	}
+	extra, extraAccounts := collectExtraAccounts(ctx, d, seen)
 
-	d.SetAccounts(ctx, mergeAccounts(collectAccounts(ctx, d, primary), extraAccounts))
-	return result, nil
+	accounts := []model.Account{}
+	if primary.Email != "" {
+		accounts = append(accounts, primary)
+	}
+	d.SetAccounts(ctx, append(accounts, extraAccounts...))
+
+	if err != nil {
+		if len(extra) == 0 {
+			return nil, err
+		}
+		// The other accounts answered, and their readings replace the stored
+		// set: carry slot 1's last readings over, flagged, so its account
+		// stays on screen instead of vanishing.
+		d.Log.Printf("antigravity: account 1: %v", err)
+		snaps = d.staleSlotOne(ctx)
+	}
+	return append(snaps, extra...), nil
+}
+
+// collectPrimary reads slot 1: the IDE first, then Gauge's own sign-in.
+func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool) (model.Account, []model.Snapshot, error) {
+	if ideUp && len(local.pools) > 0 {
+		_ = d.Store.Set(ctx, "antigravity_source", sourceLocalIDE)
+		return local.account, mergeFamilies(nil, local.pools, local.credits), nil
+	}
+
+	signedIn := d.hasSignIn(ctx, 1)
+	var who model.Account
+	if signedIn {
+		who = d.signInIdentity(ctx, 1)
+	}
+
+	// The IDE answered without quota pools. Gauge's sign-in may stand in only
+	// when it is the same account; otherwise its numbers would sit under the
+	// IDE's name.
+	if ideUp {
+		account := local.account
+		account.OAuth = signedIn
+		sameAccount := signedIn && who.Email != "" && strings.EqualFold(who.Email, account.Email)
+		if sameAccount {
+			models, pools, _, err := collectRemote(ctx, d, local.labels, SourceAntigravity)
+			if err == nil {
+				_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
+				return account, mergeFamilies(models, pools, local.credits), nil
+			}
+			d.Log.Printf("antigravity: account 1: Cloud Code fallback failed: %v", err)
+		} else if signedIn {
+			d.Log.Printf("antigravity: account 1: Gauge is signed in as %q, the IDE as %q; not mixing them",
+				who.Email, account.Email)
+		}
+		_ = d.Store.Set(ctx, "antigravity_source", sourceLocalIDE)
+		if card, ok := otherCard(local.credits, nil); ok {
+			return account, []model.Snapshot{card}, nil
+		}
+		return account, nil, fmt.Errorf("the IDE returned no quota pools for %s", account.Email)
+	}
+
+	// The IDE is closed.
+	if !signedIn {
+		_ = d.Store.Set(ctx, "antigravity_source", sourceIDEOffline)
+		account := d.lastIDEAccount(ctx)
+		return account, nil, fmt.Errorf("%w: the Antigravity IDE is not running; sign in to Gauge with this account to read its quota while the IDE is closed",
+			ErrNotConfigured)
+	}
+	// Gauge's sign-in names its own account, which need not be the one the IDE
+	// last used; with no answer from userinfo it stays unnamed.
+	account := who
+	account.Slot, account.Primary, account.OAuth = 1, true, true
+	models, pools, info, err := collectRemote(ctx, d, nil, SourceAntigravity)
+	if err != nil {
+		_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
+		return account, nil, err
+	}
+	account.TierID = tierName(info)
+	account.Tier = tierLabel(account.TierID)
+	_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
+	return account, mergeFamilies(models, pools, nil), nil
+}
+
+// staleSlotOne returns slot 1's stored readings marked as failed.
+func (d *Deps) staleSlotOne(ctx context.Context) []model.Snapshot {
+	all, err := d.Store.Snapshots(ctx)
+	if err != nil {
+		return nil
+	}
+	var out []model.Snapshot
+	for _, sn := range all {
+		if sn.Provider != "antigravity" || strings.Contains(sn.Metric, "@") {
+			continue
+		}
+		sn.Status = model.StatusError
+		out = append(out, sn)
+	}
+	return out
 }
 
 // maxAccounts bounds how many identities the panel will poll.
 const maxAccounts = 3
 
-// collectExtraAccounts fetches quota for accounts signed in through OAuth.
-func collectExtraAccounts(ctx context.Context, d *Deps) ([]model.Snapshot, []model.Account) {
+// collectExtraAccounts reads slots 2 and 3 through Gauge's sign-in. An account
+// already shown under an earlier slot is listed but not read again; seen is
+// the email slot 1 was read for, empty when slot 1 has no reading.
+func collectExtraAccounts(ctx context.Context, d *Deps, seen string) ([]model.Snapshot, []model.Account) {
 	var (
 		snaps    []model.Snapshot
 		accounts []model.Account
 	)
+	shown := map[string]int{}
+	if seen != "" {
+		shown[strings.ToLower(seen)] = 1
+	}
 	for slot := 2; slot <= maxAccounts; slot++ {
-		src := AuthSource(fmt.Sprintf("antigravity-%d", slot))
-		token, ok, _ := d.Store.Get(ctx, fmt.Sprintf("antigravity_refresh_token_%d", slot))
-		if !ok || token == "" {
+		if !d.hasSignIn(ctx, slot) {
 			continue
 		}
+		label := d.signInIdentity(ctx, slot)
+		label.Slot, label.OAuth = slot, true
+		if prev, dup := shown[strings.ToLower(label.Email)]; dup && label.Email != "" {
+			label.DuplicateOf = prev
+			d.Log.Printf("antigravity: account %d is %s, already shown as account %d; skipping", slot, label.Email, prev)
+			accounts = append(accounts, label)
+			continue
+		}
+		if label.Email != "" {
+			shown[strings.ToLower(label.Email)] = slot
+		}
 
-		models, pools, info, err := collectRemote(ctx, d, nil, src)
+		models, pools, info, err := collectRemote(ctx, d, nil, sourceFor(slot))
 		if err != nil {
 			d.Log.Printf("antigravity: account %d: %v", slot, err)
+			accounts = append(accounts, label)
 			continue
-		}
-
-		label := d.accountLabel(ctx, slot)
-		// Cache the avatar locally once, so the panel never waits on a network
-		// image inside the webview.
-		if next := d.avatarData(ctx, label.Picture); next != label.Picture {
-			label.Picture = next
-			if raw, err := json.Marshal(label); err == nil {
-				_ = d.Store.Set(ctx, fmt.Sprintf("antigravity_account_%d", slot), string(raw))
-			}
 		}
 		for _, sn := range mergeFamilies(models, pools, nil) {
 			sn.Metric = fmt.Sprintf("%s@%d", sn.Metric, slot)
 			sn.Account = label.Email
 			snaps = append(snaps, sn)
 		}
-		label.Slot = slot
-		if label.Tier == "" {
-			label.Tier = tierLabel(tierName(info))
-			label.TierID = tierName(info)
-		}
+		label.TierID = tierName(info)
+		label.Tier = tierLabel(label.TierID)
 		accounts = append(accounts, label)
 	}
 	return snaps, accounts
 }
 
-// collectAccounts assembles the identity list shown in the header.
-func collectAccounts(ctx context.Context, d *Deps, primary model.Account) []model.Account {
-	var out []model.Account
-	if primary.Email != "" {
-		out = append(out, primary)
-	}
-	for slot := 2; slot <= maxAccounts; slot++ {
-		token, ok, _ := d.Store.Get(ctx, fmt.Sprintf("antigravity_refresh_token_%d", slot))
-		if !ok || token == "" {
-			continue
-		}
-		label := d.accountLabel(ctx, slot)
-		label.Slot = slot
-		out = append(out, label)
-	}
-	return out
-}
-
-// mergeAccounts keeps one entry per slot. The quota pass produces a richer
-// label for slots it could read (it carries the plan tier), while collectAccounts
-// covers slots whose quota call failed.
-func mergeAccounts(base, extra []model.Account) []model.Account {
-	bySlot := make(map[int]model.Account, len(base)+len(extra))
-	for _, list := range [][]model.Account{base, extra} {
-		for _, a := range list {
-			if a.Slot == 0 {
-				a.Slot = 1
-			}
-			prev, seen := bySlot[a.Slot]
-			if seen {
-				if a.Email == "" {
-					a.Email = prev.Email
-				}
-				if a.Name == "" {
-					a.Name = prev.Name
-				}
-				if a.Picture == "" {
-					a.Picture = prev.Picture
-				}
-				if a.Tier == "" {
-					a.Tier, a.TierID = prev.Tier, prev.TierID
-				}
-			}
-			bySlot[a.Slot] = a
-		}
-	}
-	out := make([]model.Account, 0, len(bySlot))
-	for _, a := range bySlot {
-		out = append(out, a)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Slot < out[j].Slot })
-	return out
-}
-
 // collectRemote reads the Cloud Code quota API. labels maps the IDE's model ids
-// to display names; hasTier suppresses a duplicate subscription card.
+// to display names.
 func collectRemote(ctx context.Context, d *Deps, labels map[string]string, src AuthSource) ([]model.Snapshot, []poolSeries, loadCodeAssistResponse, error) {
 	var info loadCodeAssistResponse
 	auth, err := d.GoogleAuth(ctx, AntigravityScopes, src)
@@ -268,11 +281,6 @@ func collectRemote(ctx context.Context, d *Deps, labels map[string]string, src A
 
 	now := time.Now().UTC()
 	out := make([]model.Snapshot, 0, len(modelsResp.Models)+3)
-
-	tier := tierName(info)
-	if tier != "" {
-		_ = d.Store.Set(ctx, "antigravity_tier", tier)
-	}
 
 	names := make([]string, 0, len(modelsResp.Models))
 	for name := range modelsResp.Models {
@@ -550,7 +558,6 @@ func clamp01(v float64) float64 {
 	return v
 }
 
-// sanitizeMetric keeps metric ids stable and log-safe.
 // tierLabel translates Cloud Code tier ids into the names people recognise.
 // Unknown ids fall back to the raw id.
 func tierLabel(id string) string {
@@ -728,21 +735,4 @@ func statusFor(remaining float64) string {
 // userFacingModel drops internal catalogue entries (chat_*, tab_*, image tools).
 func userFacingModel(id string) bool {
 	return familyOf(id) != ""
-}
-
-func sanitizeMetric(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-' || r == '_' || r == ' ' || r == '.':
-			b.WriteByte('_')
-		}
-	}
-	out := strings.Trim(b.String(), "_")
-	if out == "" {
-		return "bucket"
-	}
-	return out
 }

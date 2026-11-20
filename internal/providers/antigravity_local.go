@@ -78,25 +78,34 @@ type userStatus struct {
 	} `json:"cascadeModelConfigData"`
 }
 
-// collectLocal reads credits and the model catalogue from the running IDE. The
-// returned labels map model ids to the names the IDE shows; credits come back as
-// series so they can share the "Other" card.
-func collectLocal(ctx context.Context, d *Deps) ([]model.Snapshot, map[string]string, []model.Series, []poolSeries, model.Account) {
-	var account model.Account
+// localReading is what the running IDE reported for the account it is signed
+// in to.
+type localReading struct {
+	account model.Account
+	// labels maps model ids to the names the IDE shows.
+	labels  map[string]string
+	credits []model.Series
+	pools   []poolSeries
+}
+
+// collectLocal reads the identity, credits and quota pools from the running
+// IDE. ok is false when no IDE answered.
+func collectLocal(ctx context.Context, d *Deps) (localReading, bool) {
+	var out localReading
 	hub, err := discoverHub()
 	if err != nil {
 		d.Log.Printf("antigravity: local IDE unavailable: %v", err)
-		return nil, nil, nil, nil, account
+		return out, false
 	}
 
 	status, err := fetchLocalStatus(ctx, d, hub)
 	if err != nil {
 		d.Log.Printf("antigravity: local IDE unavailable: %v", err)
-		return nil, nil, nil, nil, account
+		return out, false
 	}
-	pools := fetchLocalPools(ctx, d, hub)
+	out.pools = fetchLocalPools(ctx, d, hub)
 
-	account = model.Account{
+	out.account = model.Account{
 		Slot:    1,
 		Email:   status.Email,
 		Name:    status.Name,
@@ -106,30 +115,23 @@ func collectLocal(ctx context.Context, d *Deps) ([]model.Snapshot, map[string]st
 		Primary: true,
 	}
 
-	labels := make(map[string]string, len(status.Cascade.Configs))
+	out.labels = make(map[string]string, len(status.Cascade.Configs))
 	for _, cfg := range status.Cascade.Configs {
 		if cfg.ModelID != "" && cfg.Label != "" {
-			labels[cfg.ModelID] = cfg.Label
+			out.labels[cfg.ModelID] = cfg.Label
 		}
 	}
 
-	var out []model.Snapshot
-	var credits []model.Series
-
 	plan := status.PlanStatus.PlanInfo
 	if plan.MonthlyPromptCredits > 0 {
-		credits = append(credits, creditSeries("Prompt credits",
+		out.credits = append(out.credits, creditSeries("Prompt credits",
 			status.PlanStatus.AvailablePromptCredits, plan.MonthlyPromptCredits))
 	}
 	if plan.MonthlyFlowCredits > 0 {
-		credits = append(credits, creditSeries("Flow credits",
+		out.credits = append(out.credits, creditSeries("Flow credits",
 			status.PlanStatus.AvailableFlowCredits, plan.MonthlyFlowCredits))
 	}
-
-	for i := range out {
-		out[i].Account = account.Email
-	}
-	return out, labels, credits, pools, account
+	return out, true
 }
 
 // creditSeries renders one credit pool as a series row.

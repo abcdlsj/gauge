@@ -123,19 +123,6 @@ func (d *Deps) Accounts() []model.Account {
 	return out
 }
 
-// accountLabel reads the stored identity for an extra account slot.
-func (d *Deps) accountLabel(ctx context.Context, slot int) model.Account {
-	raw, ok, err := d.Store.Get(ctx, fmt.Sprintf("antigravity_account_%d", slot))
-	if err != nil || !ok || raw == "" {
-		return model.Account{Email: fmt.Sprintf("account %d", slot)}
-	}
-	var account model.Account
-	if err := json.Unmarshal([]byte(raw), &account); err != nil {
-		return model.Account{Email: fmt.Sprintf("account %d", slot)}
-	}
-	return account
-}
-
 // AccountsStale reports whether the cache needs a refresh.
 func (d *Deps) AccountsStale() bool {
 	d.mu.Lock()

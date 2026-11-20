@@ -19,8 +19,9 @@ import (
 	"time"
 )
 
-// tokenEndpoint trades a refresh token for an access token.
-const tokenEndpoint = "https://oauth2.googleapis.com/token"
+// tokenEndpoint trades a refresh token for an access token. A variable so
+// tests can point it at a local server.
+var tokenEndpoint = "https://oauth2.googleapis.com/token"
 
 // AuthSource selects which credential set a collector should use. Antigravity
 // and Cloud APIs usually belong to different accounts, so the panel keeps two
@@ -87,26 +88,30 @@ func quotaHeader(c credMaterial) http.Header {
 	return h
 }
 
-// resolveCreds walks the settings, then falls back to the well-known credential
-// files that Google tooling already keeps on this machine.
+// resolveCreds walks the settings; the GCP chain then falls back to the gcloud
+// ADC file.
 func (d *Deps) resolveCreds(ctx context.Context, src AuthSource) (credMaterial, error) {
 	var c credMaterial
 
-	saJSON := d.Setting(ctx, "gcp_sa_json")
-	if src == SourceGCP && saJSON == "" {
-		saJSON = d.adcServiceAccount(ctx)
+	// A service account only ever authenticates the Cloud APIs. The Antigravity
+	// quota endpoint rejects any token not minted for its own OAuth client, so
+	// letting gcp_sa_json reach that chain broke every Antigravity account.
+	if src == SourceGCP {
+		c.saJSON = d.Setting(ctx, "gcp_sa_json")
+		if c.saJSON == "" {
+			c.saJSON = d.adcServiceAccount(ctx)
+		}
 	}
-	c.saJSON = saJSON
 
 	switch {
 	case src == SourceAntigravity:
+		// Only tokens Gauge was given: its own sign-in, or one pasted into
+		// settings. The clients' credential (Keychain, agy's token file) is
+		// theirs; Gauge reads the running IDE instead.
 		c.refreshToken = firstNonEmpty(
 			d.Setting(ctx, "antigravity_refresh_token"),
 			d.Setting(ctx, "google_refresh_token"),
 		)
-		if c.refreshToken == "" {
-			c.refreshToken = antigravityLocalRefreshToken()
-		}
 		c.clientID = d.SettingDefault(ctx, "antigravity_client_id", d.SettingDefault(ctx, "google_client_id", antigravityClientID))
 		c.clientSecret = d.SettingDefault(ctx, "antigravity_client_secret", d.SettingDefault(ctx, "google_client_secret", antigravityClientSecret))
 	case strings.HasPrefix(string(src), string(SourceAntigravityAlt)):
