@@ -128,6 +128,7 @@ func (Colab) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error) {
 			UpdatedAt: now,
 		})
 	}
+	d.tagSession(ctx, "colab", cookie, out)
 	return out, nil
 }
 

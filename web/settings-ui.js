@@ -193,7 +193,14 @@
       appUpdate = upd && upd.available ? String(upd.latest || '') : '';
     }
 
+    // SESSION_GROUP holds Flow and Colab when Chrome's Google account is not
+    // one of the Antigravity accounts. Its settings are the Google section's.
+    const SESSION_GROUP = 'flow-colab';
+    const isGoogleGroup = (id) => id === 'google' || id === SESSION_GROUP || /^google-\d+$/.test(id || '');
+    const isOAuthSlot = (id) => id === 'google' || /^google-\d+$/.test(id || '');
+
     function section(id) {
+      if (id === SESSION_GROUP) return sections.find((s) => s.id === 'google');
       const direct = sections.find((s) => s.id === id);
       if (direct) return direct;
       const m = /^([a-z][a-z-]*)-(\d+)$/.exec(id || '');
@@ -201,6 +208,7 @@
     }
 
     function baseId(id) {
+      if (id === SESSION_GROUP) return 'google';
       const m = /^([a-z][a-z-]*)-(\d+)$/.exec(id || '');
       return m ? m[1] : id;
     }
@@ -282,6 +290,8 @@
           signedIn: Boolean(g.email || g.account_name || acc),
           oauth: Boolean(acc && acc.oauth),
           duplicateOf: (acc && acc.duplicate_of) || 0,
+          ideEmail: (acc && acc.ide_email) || '',
+          signInEmail: (acc && acc.sign_in_email) || '',
         };
       }
       if (acc) {
@@ -293,9 +303,11 @@
           signedIn: true,
           oauth: Boolean(acc.oauth),
           duplicateOf: acc.duplicate_of || 0,
+          ideEmail: acc.ide_email || '',
+          signInEmail: acc.sign_in_email || '',
         };
       }
-      return { slot, name: '', email: '', tier: '', signedIn: false, oauth: false, duplicateOf: 0 };
+      return { slot, name: '', email: '', tier: '', signedIn: false, oauth: false, duplicateOf: 0, ideEmail: '', signInEmail: '' };
     }
 
     function accountInitial(acc) {
@@ -318,7 +330,8 @@
       if (!sec) return [];
       const g = groupOf(id);
       if (g && g.providers && g.providers.length) return g.providers;
-      if (id && id.startsWith('google-')) return ['antigravity'];
+      if (id && /^google-\d+$/.test(id)) return ['antigravity'];
+      if (id === SESSION_GROUP) return ['google-flow', 'colab'];
       return sec.providers || [];
     }
 
@@ -373,16 +386,23 @@
     }
 
     function fieldsForConnection(sec, id) {
-      if (id && id.startsWith('google-')) return [];
+      if (isGoogleGroup(id)) return [];
       return fieldsForPage(sec, id).filter((f) => !isScheduleField(f));
     }
 
+    // A Google page schedules the collectors its group holds: Flow and Colab
+    // move to the group of the account their browser session belongs to.
     function fieldsForSchedule(sec, id) {
-      const list = fieldsForPage(sec, id).filter(isScheduleField);
-      if (id && id.startsWith('google-')) {
-        return list.filter((f) => f.key === 'refresh_antigravity_minutes');
-      }
-      return list;
+      const list = (isGoogleGroup(id) ? section('google').fields : fieldsForPage(sec, id)).filter(isScheduleField);
+      if (!isGoogleGroup(id)) return list;
+      const provs = providersForPage(sec, id);
+      return list.filter((f) => provs.includes(f.key.replace(/^refresh_/, '').replace(/_minutes$/, '')));
+    }
+
+    // Antigravity slot 1 reads as "not set up" when the IDE is closed and
+    // Gauge holds no sign-in; that is a closed IDE, and says so.
+    function ideOffline() {
+      return Boolean(overview && overview.sources && overview.sources.antigravity === 'ide_offline');
     }
 
     async function open(target) {
@@ -455,12 +475,12 @@
     // glance; a small G in the corner keeps the source readable. Until the
     // photo loads, or when it fails, the tinted G square shows instead.
     function groupBadge(g) {
-      const isGoogle = g.id === 'google' || g.id.startsWith('google-');
-      if (!isGoogle || !g.picture || !g.slot) return sourceBadge(g.id);
+      const avatar = g.id === SESSION_GROUP ? 'web' : g.slot;
+      if (!isGoogleGroup(g.id) || !g.picture || !avatar) return sourceBadge(g.id);
       return `
         <span class="sx-badge sx-badge-photo" style="--tint: ${SOURCE_META.google.tint}">
           ${SOURCE_META.google.icon}
-          <img data-avatar src="/api/avatar/${g.slot}?for=${encodeURIComponent(g.email || '')}" alt="" />
+          <img data-avatar src="/api/avatar/${avatar}?for=${encodeURIComponent(g.email || '')}" alt="" />
           <span class="sx-badge-mark" aria-hidden="true">${GaugeIcons.svg('google', 8)}</span>
         </span>`;
     }
@@ -482,12 +502,12 @@
       return text ? `<span class="sx-tag">${esc(text)}</span>` : '';
     }
 
-    function googleAvatar(acc) {
+    function googleAvatar(acc, avatar) {
       const initial = accountInitial(acc);
       return `
         <span class="sx-avatar">
           <span class="sx-avatar-init">${esc(initial)}</span>
-          <img data-avatar src="/api/avatar/${acc.slot}?for=${encodeURIComponent(acc.email || '')}" alt="" />
+          <img data-avatar src="/api/avatar/${avatar || acc.slot}?for=${encodeURIComponent(acc.email || '')}" alt="" />
         </span>`;
     }
 
@@ -499,6 +519,9 @@
       const r = runsForProviders(provs).filter((x) => BROKEN.includes(x.status))
         .sort((a, b) => SEVERITY.indexOf(a.status) - SEVERITY.indexOf(b.status))[0];
       if (!r) return null;
+      if (r.provider === 'antigravity' && r.status === 'unconfigured' && ideOffline() && provs.includes('antigravity')) {
+        return { status: 'unconfigured', text: 'IDE not running' };
+      }
       const who = provs.length > 1 ? `${titleOfProvider(r.provider).replace(/^(Google|GCP)\s+/i, '')} ` : '';
       const text = r.status === 'expired_auth'
         ? `${who}sign-in expired`
@@ -583,25 +606,27 @@
     }
 
     function conSummary(sec, id, st) {
-      if (id.startsWith('google-')) {
+      const provs = providersForPage(sec, id);
+      const chrome = section('google').fields.find((f) => f.key === 'browser_cookies');
+      const cookies = provs.includes('google-flow') || provs.includes('colab')
+        ? (chrome && chrome.value === 'chrome' ? 'Chrome cookies' : 'Pasted cookies') : '';
+      if (id === SESSION_GROUP) return cookies;
+      if (/^google-\d+$/.test(id)) {
         const acc = resolveGoogleAccount(id);
-        return acc && acc.signedIn ? 'OAuth connected' : 'Sign in required';
+        const p1 = acc && acc.oauth ? 'Google sign-in' : 'Sign in required';
+        return [p1, cookies].filter(Boolean).join(' · ');
       }
-      const fields = fieldsForConnection(sec, id);
       if (sec.id === 'google') {
         const acc = resolveGoogleAccount('google');
-        const chrome = fields.find((f) => f.key === 'browser_cookies');
-        const tok = fields.find((f) => f.key === 'antigravity_refresh_token');
         const src = overview && overview.sources && overview.sources.antigravity;
-        const oauth = (acc && acc.oauth) || (tok && tok.configured);
         const p1 = src === 'local_ide'
           ? 'Local IDE'
           : src === 'ide_offline'
             ? 'IDE not running'
-            : (oauth ? 'OAuth ready' : 'OAuth unset');
-        const p2 = chrome && chrome.value === 'chrome' ? 'Chrome cookies' : 'Manual cookies';
-        return `${p1} · ${p2}`;
+            : (acc && acc.oauth ? 'Google sign-in' : 'IDE or sign-in');
+        return [p1, cookies].filter(Boolean).join(' · ');
       }
+      const fields = fieldsForConnection(sec, id);
       if (sec.id === 'commandcode' || sec.id === 'opendesign') {
         const keyField = fields.find((f) => f.kind === 'secret');
         if (keyField && keyField.configured) return `Key ${keyField.value}`;
@@ -635,10 +660,15 @@
       const groupRows = groups.map((g) => {
         const sec = section(g.id) || {};
         const provs = providersForPage(sec, g.id);
-        const isGoogle = g.id === 'google' || g.id.startsWith('google-');
-        const acc = isGoogle ? resolveGoogleAccount(g.id) : null;
-        const plan = isGoogle ? (g.detail || (acc && acc.tier)) : g.account_name;
+        const isGoogle = isGoogleGroup(g.id);
+        const acc = isOAuthSlot(g.id) ? resolveGoogleAccount(g.id) : null;
+        const plan = g.id === SESSION_GROUP ? '' : isGoogle ? (g.detail || (acc && acc.tier)) : g.account_name;
         const title = instanceOf(g.id) && !isGoogle ? sec.title : g.title;
+        const sub = acc && acc.duplicateOf
+          ? subLine(null, `Same account as ${slotName(acc.duplicateOf)}`)
+          : g.id === SESSION_GROUP && g.email
+            ? subLine(issueText(provs), g.email)
+            : groupTelemetry(g, provs);
 
         return `
           <div class="sx-item sx-sortrow${g.hidden ? ' is-hidden' : ''}" data-sort-id="${esc(g.id)}" data-nav="${esc(g.id)}" role="button" tabindex="0">
@@ -646,7 +676,7 @@
             ${groupBadge(g)}
             <div class="sx-item-main">
               <div class="sx-item-top"><b>${esc(title)}</b>${tag(plan)}</div>
-              <div class="sx-item-sub">${groupTelemetry(g, provs)}</div>
+              <div class="sx-item-sub">${sub}</div>
             </div>
             ${g.hidden ? '<span class="sx-trail">Hidden</span>' : ''}
             ${CHEVRON}
@@ -704,10 +734,29 @@
 
     /* ---------- Level 2: Subscription Detail ---------- */
 
-    function renderHero(sec, id) {
-      const isGoogle = id === 'google' || id.startsWith('google-');
+    // slotName is how the pages refer to an Antigravity slot.
+    function slotName(slot) {
+      return slot === 1 ? 'the IDE account' : `account ${slot}`;
+    }
 
-      if (isGoogle) {
+    function renderHero(sec, id) {
+      if (id === SESSION_GROUP) {
+        const g = groupOf(id) || {};
+        const who = { name: g.account_name || '', email: g.email || '' };
+        return `
+          <div class="sx-hero">
+            ${g.picture ? googleAvatar(who, 'web') : sourceBadge('google')}
+            <div class="sx-hero-text">
+              <div class="sx-hero-top">
+                <b>${esc(who.name || who.email || 'Flow & Colab')}</b>
+                ${tag('Chrome')}
+              </div>
+              <span class="sx-hero-sub">${esc(who.email ? `${who.email} · not one of your Antigravity accounts` : 'The Google account Chrome is signed in to')}</span>
+            </div>
+          </div>`;
+      }
+
+      if (isOAuthSlot(id)) {
         const acc = resolveGoogleAccount(id);
         if (acc && acc.signedIn) {
           return `
@@ -722,12 +771,15 @@
               </div>
             </div>`;
         }
+        const slot1 = !acc || acc.slot === 1;
         return `
           <div class="sx-hero">
             ${sourceBadge('google')}
             <div class="sx-hero-text">
               <b>Google AI</b>
-              <span class="sx-hero-sub">Sign in to read Antigravity quota and plan tier</span>
+              <span class="sx-hero-sub">${slot1
+                ? 'Open the Antigravity IDE, or sign in with Google'
+                : 'Sign in with Google to read this account'}</span>
             </div>
             <button class="sx-btn primary" type="button" data-oauth-slot="${acc ? acc.slot : 1}">Sign in</button>
           </div>`;
@@ -762,24 +814,36 @@
         const broken = BROKEN.includes(r.status);
         const when = r.last_run ? fmtAgo(r.last_run) : (STATE_TEXT[r.status] || '');
         const right = broken
-          ? `<button class="sx-health-fix is-${esc(r.status)}" type="button" data-nav="${esc(id)}/connection">${FIX_TEXT[r.status]} ›</button>`
+          ? `<button class="sx-health-fix is-${esc(r.status)}" type="button" data-nav="${esc(id)}/connection">${r.provider === 'antigravity' && r.status === 'unconfigured' && ideOffline() ? 'Sign in' : FIX_TEXT[r.status]} ›</button>`
           : `<span class="sx-health-time">${esc(r.status === 'running' ? 'Refreshing' : when)}</span>`;
         return `
           <div class="sx-health-line${broken ? ' is-broken' : ''}">
             <span class="sx-dot ${esc(r.status)}"></span>
             <span class="sx-health-name">${esc(name)}</span>
             ${right}
-            ${broken && r.error && r.status !== 'unconfigured' ? `<span class="sx-health-msg" title="${esc(r.error)}">${esc(r.error)}</span>` : ''}
+            ${healthMessage(r)}
           </div>`;
       }).join('');
       return `<div class="sx-health">${lines}</div>`;
+    }
+
+    // healthMessage is the error under a broken collector. "Not configured"
+    // needs no words, except a closed IDE, which says what to do.
+    function healthMessage(r) {
+      if (!BROKEN.includes(r.status) || !r.error) return '';
+      let text = r.error;
+      if (r.status === 'unconfigured') {
+        if (!(r.provider === 'antigravity' && ideOffline())) return '';
+        text = 'IDE closed. Open it, or sign in to read quota while it is closed.';
+      }
+      return `<span class="sx-health-msg" title="${esc(text)}">${esc(text)}</span>`;
     }
 
     function renderSection(sec, id) {
       const provs = providersForPage(sec, id);
       const g = groupOf(id);
       const inst = instanceOf(id);
-      const isGoogleExtra = id.startsWith('google-') && g && g.slot > 1;
+      const isGoogleExtra = /^google-\d+$/.test(id) && g && g.slot > 1;
       const removable = isGoogleExtra || Boolean(inst);
 
       let cardsHtml = '';
@@ -842,6 +906,9 @@
       let removeHtml = '';
       if (removable) {
         const who = (g && (g.account_name || g.email)) || titleFor(sec, id);
+        const what = isGoogleExtra
+          ? 'Deletes this account\'s Google sign-in from Gauge. The Google account itself is not touched.'
+          : 'Deletes this account\'s key and name from Gauge.';
         if (confirmRemove) {
           removeHtml = `
             <section class="sx-sec sx-danger-zone">
@@ -856,7 +923,15 @@
         } else {
           removeHtml = `
             <section class="sx-sec sx-danger-zone">
-              <button class="sx-danger-link" type="button" data-confirm-remove>Remove account from Gauge…</button>
+              <div class="sx-list">
+                <div class="sx-row">
+                  <span class="sx-label">
+                    <b>Remove account</b>
+                    <span class="sx-help">${esc(what)}</span>
+                  </span>
+                  <button class="sx-btn danger" type="button" data-confirm-remove>Remove…</button>
+                </div>
+              </div>
             </section>`;
         }
       }
@@ -922,7 +997,7 @@
               ${sourceBadge('google')}
               <div class="sx-item-main">
                 <div class="sx-item-top"><b>Google AI Account</b></div>
-                <div class="sx-item-sub">${subLine(null, SOURCE_META.google.desc)}</div>
+                <div class="sx-item-sub">${subLine(null, 'Antigravity quota through Google sign-in')}</div>
               </div>
               ${countTag(googleCount)}
               ${googleAtMax ? '' : CHEVRON}
@@ -1123,66 +1198,123 @@
         </div>`;
     }
 
+    // renderOAuthCard is one Gauge sign-in: who it is and what to do with it.
     function renderOAuthCard(id) {
       const acc = resolveGoogleAccount(id);
       if (!acc) return '';
-      // Slot 1 can be named by the IDE alone; the button follows Gauge's own
-      // sign-in.
-      const btnText = acc.oauth ? 'Re-authenticate' : 'Sign in with Google';
-      const btnClass = acc.oauth ? 'sx-btn' : 'sx-btn primary';
-      const action = `<button class="${btnClass}" type="button" data-oauth-slot="${acc.slot}">${btnText}</button>`;
+      const slot1 = acc.slot === 1;
+      // Slot 1 can be named by the IDE alone; this card is Gauge's own
+      // sign-in, so it names that account.
+      const email = slot1 ? acc.signInEmail : acc.email;
+      const shown = acc.oauth
+        ? { name: slot1 && !sameEmail(acc.signInEmail, acc.email) ? '' : acc.name, email, slot: acc.slot }
+        : null;
+      let sub;
+      if (!acc.oauth) {
+        sub = slot1 ? 'Not signed in. Needed only to read quota while the IDE is closed.' : 'Not signed in';
+      } else if (acc.duplicateOf) {
+        sub = `Same account as ${slotName(acc.duplicateOf)}; its quota shows there.`;
+      } else if (slot1 && acc.ideEmail && !sameEmail(acc.ideEmail, email)) {
+        sub = `Differs from the IDE's account (${acc.ideEmail}). Read only while the IDE is closed.`;
+      } else if (slot1) {
+        sub = 'Read while the IDE is closed.';
+      } else {
+        sub = 'Read from the Cloud Code API, whether or not the IDE runs.';
+      }
+      const main = acc.oauth
+        ? `<button class="sx-btn" type="button" data-oauth-slot="${acc.slot}">Re-authenticate</button>`
+        : `<button class="sx-btn primary" type="button" data-oauth-slot="${acc.slot}">Sign in with Google</button>`;
+      const signOut = slot1 && acc.oauth
+        ? '<button class="sx-btn danger" type="button" data-sign-out="1">Sign out</button>' : '';
       return `
         <div class="sx-oauth-box">
-          ${acc.signedIn ? googleAvatar(acc) : sourceBadge('google')}
+          ${shown ? googleAvatar(shown) : sourceBadge('google')}
           <div class="sx-oauth-info">
-            <b>${esc(acc.signedIn ? (acc.name || acc.email || `Slot ${acc.slot}`) : 'Not signed in')}</b>
-            <span>${esc(acc.duplicateOf
-              ? `Same account as slot ${acc.duplicateOf}; its quota shows there`
-              : acc.signedIn ? (acc.email || 'Google OAuth connected') : 'Connect via Google sign-in')}</span>
+            <b>${esc(shown ? (shown.name || email || `Account ${acc.slot}`) : 'Google sign-in')}</b>
+            <span>${esc(sub)}</span>
           </div>
-          ${action}
+          <div class="sx-oauth-btns">${main}${signOut}</div>
         </div>`;
+    }
+
+    function sameEmail(a, b) {
+      return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+    }
+
+    // renderIDECard is slot 1's first source: the running IDE.
+    function renderIDECard() {
+      const acc = resolveGoogleAccount('google');
+      const src = overview && overview.sources && overview.sources.antigravity;
+      const running = src === 'local_ide';
+      const email = acc && acc.ideEmail;
+      const state = running ? 'Running' : src === 'cloud_api' || src === 'ide_offline' ? 'Not running' : '';
+      return `
+        <div class="sx-list">
+          <div class="sx-row">
+            <span class="sx-label">
+              <b>${esc(email || 'No IDE account yet')}</b>
+              <span class="sx-help">${esc(email
+                ? (running ? 'Read from the IDE over loopback; no network request.' : 'Shown from the last time the IDE ran.')
+                : 'Open the Antigravity IDE and sign in; Gauge picks the account up from it.')}</span>
+            </span>
+            ${state ? tag(state) : ''}
+          </div>
+        </div>`;
+    }
+
+    // renderCookies is the Flow & Colab block, shown on the page of whichever
+    // group holds them.
+    function renderCookies() {
+      const fields = section('google').fields;
+      const chromeSwitch = fields.find((f) => f.key === 'browser_cookies');
+      const cookieFields = fields.filter((f) => f.key === 'flow_cookie' || f.key === 'colab_cookie');
+      const chromeOn = chromeSwitch && chromeSwitch.value === 'chrome';
+      return `
+        <section class="sx-sec">
+          <div class="sx-eyebrow-bar">
+            <span class="sx-eyebrow">Flow &amp; Colab cookies</span>
+            ${chromeOn ? '<span class="sx-eyebrow-meta">Via Chrome</span>' : ''}
+          </div>
+          <div class="sx-list">
+            ${chromeSwitch ? renderField(chromeSwitch) : ''}
+            <div class="${chromeOn ? 'sx-dimmed' : ''}">
+              ${cookieFields.map(renderField).join('')}
+            </div>
+          </div>
+          <p class="sx-hint">Flow and Colab are listed with the Antigravity account whose email matches the cookie's Google account, or on their own when none does.</p>
+        </section>`;
     }
 
     function renderConnection(sec, id) {
       const inst = instanceOf(id);
+      const provs = providersForPage(sec, id);
+      const cookies = provs.includes('google-flow') || provs.includes('colab') ? renderCookies() : '';
 
-      // Extra Google identity (slot 2 or 3): isolated OAuth slot, no slot-1 cookies.
-      if (id.startsWith('google-')) {
+      if (id === SESSION_GROUP) return cookies;
+
+      // Extra Google identity (slot 2 or 3): Gauge's sign-in is its only source.
+      if (/^google-\d+$/.test(id)) {
         return `
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google OAuth</span></div>
+            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google sign-in</span></div>
             ${renderOAuthCard(id)}
-            <p class="sx-hint">Read through this Google sign-in only, from the Cloud Code API, whether or not the IDE runs. Flow and Colab stay on the primary account.</p>
-          </section>`;
+            <p class="sx-hint">The IDE only knows the account it is signed in to, so this account is read through Gauge's own sign-in.</p>
+          </section>
+          ${cookies}`;
       }
 
       const fields = fieldsForConnection(sec, id);
       if (id === 'google') {
-        const tokenField = fields.find((f) => f.key === 'antigravity_refresh_token');
-        const chromeSwitch = fields.find((f) => f.key === 'browser_cookies');
-        const cookieFields = fields.filter((f) => f.key === 'flow_cookie' || f.key === 'colab_cookie');
-        const chromeOn = chromeSwitch && chromeSwitch.value === 'chrome';
-
         return `
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity OAuth</span></div>
-            ${renderOAuthCard('google')}
-            <p class="sx-hint">Read from the running Antigravity IDE whenever it is open. This sign-in is the fallback while the IDE is closed.</p>
-            ${tokenField ? `<div class="sx-list sx-list-inset">${renderField(tokenField)}</div>` : ''}
+            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Antigravity IDE</span><span class="sx-eyebrow-meta">First choice</span></div>
+            ${renderIDECard()}
           </section>
           <section class="sx-sec">
-            <div class="sx-eyebrow-bar">
-              <span class="sx-eyebrow">Flow &amp; Colab cookies</span>
-              ${chromeOn ? '<span class="sx-eyebrow-meta">Via Chrome</span>' : ''}
-            </div>
-            <div class="sx-list">
-              ${chromeSwitch ? renderField(chromeSwitch) : ''}
-              <div class="${chromeOn ? 'sx-dimmed' : ''}">
-                ${cookieFields.map(renderField).join('')}
-              </div>
-            </div>
-          </section>`;
+            <div class="sx-eyebrow-bar"><span class="sx-eyebrow">Google sign-in</span><span class="sx-eyebrow-meta">While the IDE is closed</span></div>
+            ${renderOAuthCard('google')}
+          </section>
+          ${cookies}`;
       }
 
       if (sec.id === 'gcp') {
@@ -1838,6 +1970,19 @@
         }
         return;
       }
+      if (d.signOut) {
+        t.disabled = true;
+        try {
+          await api(`/api/accounts/${d.signOut}`, { method: 'DELETE' });
+          toast('Signed out');
+          await reloadSection();
+          if (opts.onSaved) opts.onSaved();
+        } catch (err) {
+          toast(err.message);
+          t.disabled = false;
+        }
+        return;
+      }
       if (d.doRemoveAccount) {
         t.disabled = true;
         try {
@@ -1943,19 +2088,24 @@
         const res = await api(path);
         await openConsent(res.url);
         toast('Finish sign-in in your browser');
-        const hadSlot = accountsList().some((a) => a.slot === slot);
+        // The callback decides the slot (an account Gauge already shows keeps
+        // its own) and says what it did; report that, not a guess.
         let ticks = 0;
         const timer = setInterval(async () => {
-          await reloadSection();
-          if (opts.onSaved) opts.onSaved();
-          const hasNow = accountsList().some((a) => a.slot === slot);
-          if (!hadSlot && hasNow) {
+          let st = null;
+          try {
+            st = await api(`/api/oauth/status?state=${encodeURIComponent(res.state || '')}`);
+          } catch (_) { /* keep polling */ }
+          if (st && st.done) {
             clearInterval(timer);
-            toast('Google account connected');
+            toast(st.ok ? (st.message || 'Google account connected').replace(/ You can close this tab.*$/, '') : `Sign-in failed: ${st.message}`);
+            await reloadSection();
+            if (opts.onSaved) opts.onSaved();
+            setTimeout(async () => { await reloadSection(); if (opts.onSaved) opts.onSaved(); }, 4000);
             return;
           }
-          if (++ticks >= 36) clearInterval(timer);
-        }, 2500);
+          if (++ticks >= 120) clearInterval(timer);
+        }, 1500);
       } catch (err) {
         toast(`Sign-in failed: ${err.message}`);
       }

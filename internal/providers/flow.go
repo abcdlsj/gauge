@@ -97,7 +97,7 @@ func (GoogleFlow) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error
 		status = model.StatusWarning
 	}
 
-	return []model.Snapshot{{
+	out := []model.Snapshot{{
 		Provider:  "google-flow",
 		Metric:    "flow_credits",
 		Label:     "Video credits",
@@ -107,7 +107,9 @@ func (GoogleFlow) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, error
 		ResetAt:   balance.ResetAt,
 		Status:    status,
 		UpdatedAt: time.Now().UTC(),
-	}}, nil
+	}}
+	d.tagSession(ctx, "google-flow", cookie, out)
+	return out, nil
 }
 
 // flowBalance is the decoded GetCredits reply.

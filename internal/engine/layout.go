@@ -161,7 +161,7 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 
 	// The groups this build knows, plus one per unknown collector so a new
 	// provider is never invisible.
-	defs := googleGroupDefs(accounts)
+	defs := googleGroupDefs(accounts, sessionOwners(quotas, accounts))
 	defs = append(defs, e.instanceGroupDefs(ctx, "commandcode", "Command Code", "commandcode_api_key", quotas)...)
 	defs = append(defs, e.instanceGroupDefs(ctx, "opendesign", "Open Design", "opendesign_control_key", quotas)...)
 	for _, d := range groupDefs {
@@ -192,9 +192,9 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 				if q.Provider != prov || q.Kind == "note" {
 					continue
 				}
-				// A per-identity group only owns the cards that identity
-				// produced; the collector tags them with "@N".
-				if d.Slot > 0 && accountSlot(q.Metric) != d.Slot {
+				// A per-identity group only owns the Antigravity cards that
+				// identity produced; the collector tags them with "@N".
+				if d.Slot > 0 && prov == "antigravity" && accountSlot(q.Metric) != d.Slot {
 					continue
 				}
 				mine = append(mine, q)
@@ -232,9 +232,10 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 		if _, ok := storedGroup[d.ID]; ok {
 			continue
 		}
-		// A new identity lands right after the previous identity group, not at
-		// the bottom of the list. Everything else appends in default order.
-		if d.Slot > 1 {
+		// A new identity, or the browser session's group, lands right after
+		// the previous Google group, not at the bottom of the list. Everything
+		// else appends in default order.
+		if d.Slot > 1 || d.ID == SessionGroupID {
 			at := len(order)
 			for j := i - 1; j >= 0 && defs[j].Slot > 0; j-- {
 				if pos := slices.Index(order, defs[j].ID); pos >= 0 {
@@ -256,6 +257,16 @@ func (e *Engine) Layout(ctx context.Context, quotas []model.Snapshot, accounts [
 		g.Hidden = has && sg.Hidden
 
 		g.Items = orderedItems(cards[id], sg.Items, defaults)
+		if d.ID == SessionGroupID {
+			// Flow and Colab under a Google account none of the Antigravity
+			// groups show: name it, so the cards do not pass for theirs.
+			for _, p := range d.Providers {
+				if acc := providers.SessionAccount(ctx, e.store, p); acc.Email != "" {
+					g.Email, g.AccountName, g.Picture = acc.Email, acc.Name, acc.Picture
+					break
+				}
+			}
+		}
 		if d.Slot > 0 {
 			if strings.HasPrefix(d.ID, "google") {
 				if acc, ok := findAccount(accounts, d.Slot); ok {
@@ -358,28 +369,85 @@ func (e *Engine) instanceGroupDefs(ctx context.Context, provider, title, baseKey
 	return out
 }
 
+// SessionGroupID is the group of Flow and Colab when the browser session they
+// read belongs to a Google account no Antigravity group shows.
+const SessionGroupID = "flow-colab"
+
+// sessionProviders read the browser's Google session, not an OAuth sign-in.
+var sessionProviders = []string{"google-flow", "colab"}
+
+// sessionOwners decides which group each browser-session provider joins: the
+// slot of the Google account its cookie belongs to, or 0 for a group of its
+// own. A provider that has not told its account yet (no reading, or the
+// account lookup failed) stays with slot 1, where its settings live.
+func sessionOwners(quotas []model.Snapshot, accounts []model.Account) map[string]int {
+	out := map[string]int{}
+	for _, p := range sessionProviders {
+		email := ""
+		for _, q := range quotas {
+			if q.Provider == p && q.Account != "" {
+				email = q.Account
+				break
+			}
+		}
+		if email == "" {
+			out[p] = 1
+			continue
+		}
+		out[p] = 0
+		for _, a := range accounts {
+			if a.DuplicateOf == 0 && strings.EqualFold(a.Email, email) {
+				out[p] = a.Slot
+				break
+			}
+		}
+	}
+	return out
+}
+
 // googleGroupDefs splits Google AI into one group per signed-in identity.
 // Slot 1 keeps the historic "google" id so stored layouts survive; extra
-// identities get "google-N".
-func googleGroupDefs(accounts []model.Account) []groupDef {
+// identities get "google-N". Flow and Colab join the identity their browser
+// session belongs to, or SessionGroupID when it is none of them.
+func googleGroupDefs(accounts []model.Account, owners map[string]int) []groupDef {
+	with := func(slot int) []string {
+		list := []string{"antigravity"}
+		for _, p := range sessionProviders {
+			if owners[p] == slot {
+				list = append(list, p)
+			}
+		}
+		return list
+	}
 	defs := []groupDef{{
 		ID:        "google",
 		Title:     "Google AI",
-		Providers: []string{"antigravity", "google-flow", "colab"},
+		Providers: with(1),
 		Slot:      1,
 	}}
+	known := map[int]bool{1: true}
 	for _, a := range accounts {
 		if a.Slot <= 1 {
 			continue
 		}
+		known[a.Slot] = true
 		defs = append(defs, groupDef{
 			ID:        fmt.Sprintf("google-%d", a.Slot),
 			Title:     "Google AI",
-			Providers: []string{"antigravity"},
+			Providers: with(a.Slot),
 			Slot:      a.Slot,
 		})
 	}
 	slices.SortStableFunc(defs, func(a, b groupDef) int { return a.Slot - b.Slot })
+	var alone []string
+	for _, p := range sessionProviders {
+		if !known[owners[p]] {
+			alone = append(alone, p)
+		}
+	}
+	if len(alone) > 0 {
+		defs = append(defs, groupDef{ID: SessionGroupID, Title: "Flow & Colab", Providers: alone})
+	}
 	return defs
 }
 

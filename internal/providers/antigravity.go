@@ -133,23 +133,30 @@ func (Antigravity) Collect(ctx context.Context, d *Deps) ([]model.Snapshot, erro
 
 // collectPrimary reads slot 1: the IDE first, then Gauge's own sign-in.
 func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool) (model.Account, []model.Snapshot, error) {
-	if ideUp && len(local.pools) > 0 {
-		_ = d.Store.Set(ctx, "antigravity_source", sourceLocalIDE)
-		return local.account, mergeFamilies(nil, local.pools, local.credits), nil
-	}
-
 	signedIn := d.hasSignIn(ctx, 1)
 	var who model.Account
 	if signedIn {
 		who = d.signInIdentity(ctx, 1)
 	}
+	// stamp records both identities on whichever account slot 1 shows.
+	stamp := func(a model.Account, ideEmail string) model.Account {
+		a.Slot, a.Primary, a.OAuth = 1, true, signedIn
+		a.IDEEmail = ideEmail
+		if signedIn {
+			a.SignInEmail = who.Email
+		}
+		return a
+	}
 
-	// The IDE answered without quota pools. Gauge's sign-in may stand in only
-	// when it is the same account; otherwise its numbers would sit under the
-	// IDE's name.
 	if ideUp {
-		account := local.account
-		account.OAuth = signedIn
+		account := stamp(local.account, local.account.Email)
+		if len(local.pools) > 0 {
+			_ = d.Store.Set(ctx, "antigravity_source", sourceLocalIDE)
+			return account, mergeFamilies(nil, local.pools, local.credits), nil
+		}
+		// The IDE answered without quota pools. Gauge's sign-in may stand in
+		// only when it is the same account; otherwise its numbers would sit
+		// under the IDE's name.
 		sameAccount := signedIn && who.Email != "" && strings.EqualFold(who.Email, account.Email)
 		if sameAccount {
 			models, pools, _, err := collectRemote(ctx, d, local.labels, SourceAntigravity)
@@ -170,26 +177,27 @@ func collectPrimary(ctx context.Context, d *Deps, local localReading, ideUp bool
 	}
 
 	// The IDE is closed.
+	last := d.lastIDEAccount(ctx)
 	if !signedIn {
 		_ = d.Store.Set(ctx, "antigravity_source", sourceIDEOffline)
-		account := d.lastIDEAccount(ctx)
-		return account, nil, fmt.Errorf("%w: the Antigravity IDE is not running; sign in to Gauge with this account to read its quota while the IDE is closed",
-			ErrNotConfigured)
+		return stamp(last, last.Email), nil, fmt.Errorf("%w: %s", ErrNotConfigured, IDEOfflineHint)
 	}
 	// Gauge's sign-in names its own account, which need not be the one the IDE
 	// last used; with no answer from userinfo it stays unnamed.
-	account := who
-	account.Slot, account.Primary, account.OAuth = 1, true, true
+	account := stamp(who, last.Email)
+	_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
 	models, pools, info, err := collectRemote(ctx, d, nil, SourceAntigravity)
 	if err != nil {
-		_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
 		return account, nil, err
 	}
 	account.TierID = tierName(info)
 	account.Tier = tierLabel(account.TierID)
-	_ = d.Store.Set(ctx, "antigravity_source", sourceCloudAPI)
 	return account, mergeFamilies(models, pools, nil), nil
 }
+
+// IDEOfflineHint is the error slot 1 reports while the IDE is closed and Gauge
+// holds no sign-in.
+const IDEOfflineHint = "the Antigravity IDE is not running; open it, or sign in to Gauge with this account to read its quota while the IDE is closed"
 
 // staleSlotOne returns slot 1's stored readings marked as failed.
 func (d *Deps) staleSlotOne(ctx context.Context) []model.Snapshot {

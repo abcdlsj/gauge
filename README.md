@@ -78,14 +78,24 @@ Antigravity shows up to three Google accounts side by side.
   the account's name and avatar, so it stays listed when the IDE closes.
 - When the IDE is closed, or answers without quota pools, account 1 falls back
   to the Cloud Code API through **Gauge's own Google sign-in**
-  (Settings → Google AI → Sign in, stored encrypted in the database). With the
-  IDE open, that fallback is used only if the sign-in is the same account as
-  the IDE's. With no sign-in, account 1 keeps its name and last readings and
-  reports that the IDE is not running.
-- **Accounts 2 and 3** exist only through Gauge's sign-in and always use the
-  Cloud Code API, whether or not the IDE runs: the IDE only knows the one
-  account it is signed in to.
-- An account signed in twice is read once, under the earlier slot.
+  (Settings → Google AI → Connection & Auth → Sign in with Google, stored
+  encrypted in the database). With the IDE open, that fallback is used only if
+  the sign-in is the same account as the IDE's. With no sign-in, account 1
+  keeps its name and last readings and reports that the IDE is not running.
+- **Accounts 2 and 3** exist only through Gauge's sign-in (Settings → + Add →
+  Google AI Account) and always use the Cloud Code API, whether or not the IDE
+  runs: the IDE only knows the one account it is signed in to.
+- A sign-in lands by account, not by the button pressed: the IDE's account
+  always becomes account 1's fallback, an account already connected is renewed
+  in its own slot, and anything else takes the next free slot. An account that
+  still appears twice is read once, under the earlier slot.
+
+Flow and Colab read the first Google account of the Chrome session (or the
+pasted cookie). Gauge asks `accounts.google.com/ListAccounts` with the same
+cookie which account that is, once per cookie. The cards join the Antigravity
+account with that email, or form a **Flow & Colab** group of their own, named
+after the cookie's account, when none matches. Until the account is known they
+stay with account 1.
 
 Billing keeps a cursor in the database instead of rescanning: each cycle reads at
 most one extra day of partitions.
@@ -117,7 +127,7 @@ Read it as: what Gauge does *not* do is most of the risk surface.
 | GCP billing / monitoring | OAuth + documented APIs | none |
 | Antigravity, local | loopback RPC to the IDE's own language server | none — same call the IDE makes |
 | Antigravity, IDE closed or accounts 2–3 | Gauge's own OAuth sign-in with the client the desktop app ships | low; read-only, no other endpoints |
-| Colab / Flow | your browser cookie + the internal gRPC-Web endpoint the web UI uses | the real one — see below |
+| Colab / Flow | your browser cookie + the internal gRPC-Web endpoint the web UI uses, and `ListAccounts` (what Chrome itself calls) to name the cookie's account | the real one — see below |
 
 The last row is the only one that leans on Google's "no automated access"
 clause. It is also read-only and deliberately slow:
@@ -155,7 +165,7 @@ are often different accounts:
 
 | Chain | Order |
 | --- | --- |
-| Antigravity account 1 | the running IDE (no credential) → `antigravity_refresh_token` (Gauge sign-in or pasted) |
+| Antigravity account 1 | the running IDE (no credential) → `antigravity_refresh_token` (Gauge sign-in) |
 | Antigravity accounts 2–3 | `antigravity_refresh_token_2` / `_3` (Gauge sign-in only) |
 | GCP | `gcp_sa_json` → ADC service account → `gcp_refresh_token` → `google_refresh_token` → ADC user credentials |
 
@@ -178,9 +188,9 @@ Optional: `webhook_url` receives a JSON alert when a provider changes state;
 pasted cookie.
 
 Cards are grouped by subscription: **Google AI Ultra/Pro** (named after the
-account's plan) holds the Antigravity Gemini and Claude pools, Flow credits and
-Colab compute units; Command Code, Open Design and Google Cloud are groups of
-their own. In Settings, drag subscriptions (and the cards inside one) to set
+account's plan) holds the Antigravity Gemini and Claude pools, and Flow credits
+and Colab compute units when the browser session is the same account; Command
+Code, Open Design and Google Cloud are groups of their own. In Settings, drag subscriptions (and the cards inside one) to set
 the menu-bar order, and switch either level off. The layout is stored as
 `display_layout`.
 

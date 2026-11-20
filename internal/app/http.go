@@ -63,7 +63,6 @@ var settingSections = []sectionDef{
 		ID: "google", Title: "Google AI", Providers: []string{"antigravity", "google-flow", "colab"},
 		Summary: "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
 		Fields: []fieldDef{
-			{Key: "antigravity_refresh_token", Label: "Antigravity refresh token", Kind: "secret", Placeholder: "1//0g…", Help: "Read only while the IDE is closed. Leave empty to use the Gauge sign-in above.", Sensitive: true, Optional: true},
 			{Key: "browser_cookies", Label: "Read cookies from Chrome", Kind: "switch", Options: []string{"chrome", "off"}, Default: "chrome", Help: "Flow and Colab reuse the Chrome sign-in. One keychain prompt."},
 			{Key: "flow_cookie", Label: "Flow cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; SAPISID=…", Sensitive: true, Optional: true},
 			{Key: "colab_cookie", Label: "Colab cookie", Kind: "secret", Multiline: true, Placeholder: "SID=…; HSID=…", Sensitive: true, Optional: true},
@@ -551,54 +550,63 @@ func (a *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 // window paints instantly on the next launch; the pages add the account's
 // email as a query so a slot that changes account does not keep the old face.
 func (a *Server) handleAvatar(w http.ResponseWriter, r *http.Request) {
-	slot, err := strconv.Atoi(r.PathValue("slot"))
-	if err != nil {
+	picture := ""
+	if r.PathValue("slot") == providers.SessionAvatarSlot {
+		// The Google account of the browser session behind Flow and Colab.
+		for _, p := range []string{"google-flow", "colab"} {
+			if acc := providers.SessionAccount(r.Context(), a.store, p); acc.Picture != "" {
+				picture = acc.Picture
+				break
+			}
+		}
+	} else if slot, err := strconv.Atoi(r.PathValue("slot")); err == nil {
+		for _, account := range a.engine.Accounts() {
+			if account.Slot == slot {
+				picture = account.Picture
+				break
+			}
+		}
+	}
+	if picture == "" {
 		http.NotFound(w, r)
 		return
 	}
-	for _, account := range a.engine.Accounts() {
-		if account.Slot != slot || account.Picture == "" {
-			continue
-		}
-		if rest, ok := strings.CutPrefix(account.Picture, "data:"); ok {
-			if media, data, found := strings.Cut(rest, ";base64,"); found {
-				raw, err := base64.StdEncoding.DecodeString(data)
-				if err != nil {
-					break
-				}
+	if rest, ok := strings.CutPrefix(picture, "data:"); ok {
+		if media, data, found := strings.Cut(rest, ";base64,"); found {
+			if raw, err := base64.StdEncoding.DecodeString(data); err == nil {
 				w.Header().Set("Content-Type", media)
 				w.Header().Set("Cache-Control", "public, max-age=86400")
 				_, _ = w.Write(raw)
 				return
 			}
 		}
-		// Fetch Google's copy here instead of redirecting: the webview's
-		// content policy and App Transport Security both dislike a cross-origin
-		// image hop, so the avatar silently failed and fell back to initials.
-		if u, err := url.Parse(account.Picture); err == nil && u.Scheme == "https" && strings.HasSuffix(u.Hostname(), ".googleusercontent.com") {
-			client := a.client
-			if client == nil {
-				client = &http.Client{Timeout: 5 * time.Second}
-			}
-			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
-			if err != nil {
-				break
-			}
+		http.NotFound(w, r)
+		return
+	}
+	// Fetch Google's copy here instead of redirecting: the webview's content
+	// policy and App Transport Security both dislike a cross-origin image hop,
+	// so the avatar silently failed and fell back to initials.
+	if u, err := url.Parse(picture); err == nil && u.Scheme == "https" && strings.HasSuffix(u.Hostname(), ".googleusercontent.com") {
+		client := a.client
+		if client == nil {
+			client = &http.Client{Timeout: 5 * time.Second}
+		}
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+		if err == nil {
 			req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gauge")
 			resp, err := client.Do(req)
-			if err != nil || resp.StatusCode != http.StatusOK {
-				if resp != nil {
-					resp.Body.Close()
-				}
-				break
+			if err == nil && resp.StatusCode == http.StatusOK {
+				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+				_, _ = io.Copy(w, io.LimitReader(resp.Body, 512<<10))
+				resp.Body.Close()
+				return
 			}
-			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-			_, _ = io.Copy(w, io.LimitReader(resp.Body, 512<<10))
-			resp.Body.Close()
-			return
+			if resp != nil {
+				resp.Body.Close()
+			}
 		}
-		http.Redirect(w, r, account.Picture, http.StatusFound)
+		http.NotFound(w, r)
 		return
 	}
 	http.NotFound(w, r)

@@ -162,13 +162,13 @@ const shortNames = {
 
 // renderAccountLine is the Google identity under the subscription title:
 // avatar, name, email and the exact plan.
-function renderAccountLine(a, detail) {
+function renderAccountLine(a, detail, avatar) {
   if (!a) return '';
   const tier = detail || a.tier || '';
   const kind = /ultra/i.test(tier) ? 'ultra' : /pro/i.test(tier) ? 'pro' : 'free';
   return `
     <div class="src-account">
-      <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${a.slot}?for=${encodeURIComponent(a.email || '')}" alt="" onerror="this.remove()" /></span>
+      <span class="avatar" data-tier="${kind}"><img src="/api/avatar/${avatar || a.slot}?for=${encodeURIComponent(a.email || '')}" alt="" onerror="this.remove()" /></span>
       <span class="who"><b>${esc(a.account_name || a.name || a.email || '')}</b>${(a.account_name || a.name) && a.email ? `<span>${esc(a.email)}</span>` : ''}</span>
       ${detail ? `<span class="plan ${kind === 'ultra' ? '' : kind}">${esc(detail)}</span>` : ''}
     </div>`;
@@ -222,7 +222,10 @@ function renderGroups(overview) {
   return (overview.layout || []).filter((g) => !g.hidden).map((g) => {
     const cards = g.items.filter((it) => !it.hidden).map((it) => ({ it, sn: find(it) })).filter((c) => c.sn);
     if (!cards.length) return '';
-    const isGoogle = g.id === 'google' || g.id.startsWith('google-');
+    // Flow & Colab get a group of their own when the browser session belongs
+    // to an account no Antigravity group shows; it names that account.
+    const isSession = g.id === 'flow-colab';
+    const isGoogle = isSession || g.id === 'google' || /^google-\d+$/.test(g.id);
     const user = !isGoogle && cards[0].sn.account
       ? `<span class="src-user">${esc(cards[0].sn.account.split('@')[0])}</span>` : '';
     return `
@@ -232,7 +235,7 @@ function renderGroups(overview) {
           ${staleTag(cards)}
           ${user}
         </div>
-        ${isGoogle ? renderAccountLine(g, g.detail) : ''}
+        ${isGoogle ? renderAccountLine(g, g.detail, isSession ? 'web' : '') : ''}
         ${bodyFor(cards)}
       </section>`;
   }).join('');
@@ -303,6 +306,7 @@ const NETWORK_SETTINGS = 'general/network';
 // behind one reassuring sentence.
 function startupState(overview) {
   const runs = overview.runs || [];
+  const ideClosed = Boolean(overview.sources && overview.sources.antigravity === 'ide_offline');
   const rows = (overview.layout || [])
     .filter((g) => g.providers && g.providers.length)
     .map((g) => {
@@ -321,9 +325,12 @@ function startupState(overview) {
         route: directToConn ? `${g.id}/connection` : g.id,
         title: g.title,
         status,
-        word: status === 'unconfigured' && base === 'google' ? 'Sign in' : (STATE_WORD[status] || status),
+        word: status === 'unconfigured' && base === 'google' ? (ideClosed ? 'IDE closed' : 'Sign in') : (STATE_WORD[status] || status),
         detail: error,
-        note: status === 'error' || status === 'expired_auth' ? friendlyError(error) : meta.desc,
+        note: status === 'error' || status === 'expired_auth' ? friendlyError(error)
+          : status === 'unconfigured' && base === 'google'
+            ? 'Open the IDE, or sign in with Google'
+            : meta.desc,
         network: NETWORK_ERROR.test(error),
         meta,
       };

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/abcdlsj/gauge/internal/model"
+	"github.com/abcdlsj/gauge/internal/store"
 )
 
 // Antigravity identities.
@@ -145,4 +147,44 @@ func (d *Deps) lastIDEAccount(ctx context.Context) model.Account {
 	a := d.loadIdentity(ctx, ideAccountKey).Account
 	a.Slot, a.Primary = 1, true
 	return a
+}
+
+// AntigravitySlotFor names the slot that already shows email: 1 for the IDE's
+// account or slot 1's sign-in, N for an extra sign-in. 0 means none.
+func AntigravitySlotFor(ctx context.Context, st *store.Store, email string) int {
+	if email == "" {
+		return 0
+	}
+	read := func(key string) string {
+		var id storedIdentity
+		if raw, ok, err := st.Get(ctx, key); err == nil && ok {
+			_ = json.Unmarshal([]byte(raw), &id)
+		}
+		return id.Email
+	}
+	if strings.EqualFold(read(ideAccountKey), email) {
+		return 1
+	}
+	for slot := 1; slot <= maxAccounts; slot++ {
+		key := "antigravity_refresh_token"
+		if slot > 1 {
+			key = fmt.Sprintf("antigravity_refresh_token_%d", slot)
+		}
+		if v, ok, _ := st.Get(ctx, key); !ok || v == "" {
+			continue
+		}
+		if strings.EqualFold(read(identityKey(slot)), email) {
+			return slot
+		}
+	}
+	return 0
+}
+
+// AntigravityIDEEmail is the account the IDE last reported.
+func AntigravityIDEEmail(ctx context.Context, st *store.Store) string {
+	var id storedIdentity
+	if raw, ok, err := st.Get(ctx, ideAccountKey); err == nil && ok {
+		_ = json.Unmarshal([]byte(raw), &id)
+	}
+	return id.Email
 }

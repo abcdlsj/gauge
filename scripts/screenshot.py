@@ -186,6 +186,42 @@ def fixture_overview_google_only() -> dict:
     return ov
 
 
+def fixture_overview_accounts() -> dict:
+    """Three accounts: the IDE's, signed in to Gauge as someone else; a Gauge
+    sign-in; and Chrome on a third account, so Flow and Colab stand apart."""
+    ov = fixture_overview_google_only()
+    ov["sources"] = {"antigravity": "local_ide"}
+    ov["accounts"][0].update({"oauth": True, "ide_email": "songjian.li@gmail.com",
+                              "sign_in_email": "other.person@gmail.com"})
+    ov["accounts"][1].update({"oauth": True})
+    google = ov["layout"][0]
+    google["providers"] = ["antigravity"]
+    session_items = [i for i in google["items"] if i["provider"] != "antigravity"]
+    google["items"] = [i for i in google["items"] if i["provider"] == "antigravity"]
+    ov["layout"].insert(2, {"id": "flow-colab", "title": "Flow & Colab", "hidden": False,
+                            "email": "chrome.user@gmail.com", "account_name": "Chrome User",
+                            "picture": "data:image/png;base64,", "providers": ["google-flow", "colab"],
+                            "items": session_items})
+    for q in ov["quotas"]:
+        if q["provider"] in ("google-flow", "colab"):
+            q["account"] = "chrome.user@gmail.com"
+    return ov
+
+
+def fixture_overview_ide_closed() -> dict:
+    """The IDE is closed and Gauge holds no sign-in for its account."""
+    ov = fixture_overview()
+    ov["sources"] = {"antigravity": "ide_offline"}
+    ov["accounts"][0].update({"oauth": False, "ide_email": "songjian.li@gmail.com"})
+    for r in ov["runs"]:
+        if r["provider"] == "antigravity":
+            r.update({"status": "unconfigured", "error": "not configured: the Antigravity IDE is not running; open it, or sign in to Gauge with this account to read its quota while the IDE is closed"})
+    for q in ov["quotas"]:
+        if q["provider"] == "antigravity":
+            q["status"] = "error"
+    return ov
+
+
 def fixture_settings_fresh() -> dict:
     """Settings with nothing stored: every field back at its default."""
     out = fixture_settings()
@@ -203,6 +239,8 @@ def fixtures() -> dict:
         "": (fixture_overview, fixture_settings),
         "fresh": (fixture_overview_fresh, fixture_settings_fresh),
         "google-only": (fixture_overview_google_only, fixture_settings),
+        "accounts": (fixture_overview_accounts, fixture_settings),
+        "ide-closed": (fixture_overview_ide_closed, fixture_settings),
     }
 
 
@@ -261,7 +299,6 @@ def fixture_settings() -> dict:
             {"id": "google", "title": "Google AI", "providers": ["antigravity", "google-flow", "colab"],
              "summary": "Antigravity model quota, Flow credits and Colab compute units of the Google account.",
              "fields": [
-                 field("antigravity_refresh_token", "Antigravity refresh token", "secret", "••••x9Qa", optional=True, help="Read only while the IDE is closed. Leave empty to use the Gauge sign-in above."),
                  field("browser_cookies", "Read cookies from Chrome", "switch", "chrome", options=["chrome", "off"], default="chrome", help="Flow and Colab reuse the Chrome sign-in. One keychain prompt."),
                  field("flow_cookie", "Flow cookie", "secret", multiline=True, optional=True),
                  field("colab_cookie", "Colab cookie", "secret", multiline=True, optional=True),

@@ -600,8 +600,9 @@ textarea.sx-input {
   background: var(--surface);
   border: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
 }
 .sx-oauth-info {
   flex: 1;
@@ -619,11 +620,11 @@ textarea.sx-input {
 }
 .sx-oauth-info span {
   font-size: 11px;
+  line-height: 1.4;
   color: var(--faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
+/* Buttons get a row of their own, so the account text keeps the width. */
+.sx-oauth-btns { display: flex; flex: 1 0 100%; justify-content: flex-end; gap: 6px; }
 
 .sx-dimmed { opacity: 0.6; transition: opacity 0.15s ease; }
 .sx-dimmed:focus-within { opacity: 1; }

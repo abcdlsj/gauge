@@ -118,6 +118,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	mux.HandleFunc("POST /api/proxy/test", s.handleProxyTest)
 	mux.HandleFunc("GET /api/avatar/{slot}", s.handleAvatar)
 	mux.HandleFunc("GET /api/oauth/start", broker.handleStart)
+	mux.HandleFunc("GET /api/oauth/status", broker.handleStatus)
 	mux.HandleFunc("DELETE /api/accounts/{slot}", s.handleDeleteAccount)
 	mux.HandleFunc("POST /api/instances/{provider}", s.handleInstance)
 	mux.HandleFunc("DELETE /api/instances/{provider}/{slot}", s.handleDeleteInstance)

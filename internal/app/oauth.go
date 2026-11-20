@@ -33,6 +33,19 @@ type oauthBroker struct {
 
 	mu      sync.Mutex
 	pending map[string]pendingAuth
+	// results holds the outcome of each finished sign-in, by state, so the
+	// settings page can say what happened instead of guessing from the list.
+	results map[string]oauthResult
+}
+
+// oauthResult is what /api/oauth/status reports for one sign-in.
+type oauthResult struct {
+	Done    bool   `json:"done"`
+	OK      bool   `json:"ok"`
+	Slot    int    `json:"slot,omitempty"`
+	Email   string `json:"email,omitempty"`
+	Message string `json:"message,omitempty"`
+	at      time.Time
 }
 
 type pendingAuth struct {
@@ -54,6 +67,7 @@ func newOAuthBroker(st *store.Store, eng *engine.Engine, proxy *providers.Proxy,
 		log:     logger,
 		client:  proxy.Client(20 * time.Second),
 		pending: make(map[string]pendingAuth),
+		results: make(map[string]oauthResult),
 	}
 }
 
@@ -99,8 +113,38 @@ func (b *oauthBroker) handleStart(w http.ResponseWriter, r *http.Request) {
 	params.Set("prompt", "consent")
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"url": "https://accounts.google.com/o/oauth2/v2/auth?" + params.Encode(),
+		"url":   "https://accounts.google.com/o/oauth2/v2/auth?" + params.Encode(),
+		"state": state,
 	})
+}
+
+// handleStatus reports how a sign-in started with handleStart ended.
+func (b *oauthBroker) handleStatus(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	b.mu.Lock()
+	res, ok := b.results[state]
+	b.mu.Unlock()
+	if !ok {
+		writeJSON(w, http.StatusOK, oauthResult{})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// finish records a sign-in's outcome and shows it in the browser tab.
+func (b *oauthBroker) finish(w http.ResponseWriter, state string, res oauthResult) {
+	res.Done, res.at = true, time.Now()
+	b.mu.Lock()
+	for k, v := range b.results {
+		if time.Since(v.at) > oauthStateTTL {
+			delete(b.results, k)
+		}
+	}
+	if state != "" {
+		b.results[state] = res
+	}
+	b.mu.Unlock()
+	renderCallback(w, res.OK, res.Message)
 }
 
 // handleCallback exchanges the authorization code and stores the refresh token.
@@ -118,18 +162,18 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 		if errParam == "access_denied" {
 			msg = "Sign-in was cancelled. You can close this tab and try again from Gauge."
 		}
-		renderCallback(w, false, msg)
+		b.finish(w, state, oauthResult{Message: msg})
 		return
 	}
 
 	code := query.Get("code")
 
 	if !ok || time.Now().After(p.expires) {
-		renderCallback(w, false, "This sign-in link expired. Start again from Gauge.")
+		b.finish(w, state, oauthResult{Message: "This sign-in link expired. Start again from Gauge."})
 		return
 	}
 	if code == "" {
-		renderCallback(w, false, "Google did not return an authorization code.")
+		b.finish(w, state, oauthResult{Message: "Google did not return an authorization code."})
 		return
 	}
 
@@ -139,33 +183,80 @@ func (b *oauthBroker) handleCallback(w http.ResponseWriter, r *http.Request) {
 	refresh, access, err := b.exchange(ctx, code, p)
 	if err != nil {
 		b.log.Printf("oauth: exchange failed: %v", err)
-		renderCallback(w, false, "Token exchange failed: "+err.Error())
+		b.finish(w, state, oauthResult{Message: "Token exchange failed: " + err.Error()})
 		return
 	}
 
+	account, infoErr := b.userInfo(ctx, access)
+	if infoErr != nil {
+		b.log.Printf("oauth: slot %d: cannot read who signed in: %v", p.slot, infoErr)
+	}
+	slot, note := placeSignIn(ctx, b.store, p.slot, account.Email)
+
 	key := "antigravity_refresh_token"
-	if p.slot > 1 {
-		key = fmt.Sprintf("antigravity_refresh_token_%d", p.slot)
+	if slot > 1 {
+		key = fmt.Sprintf("antigravity_refresh_token_%d", slot)
 	}
 	if err := b.store.Set(ctx, key, refresh); err != nil {
-		renderCallback(w, false, "Could not store the credential: "+err.Error())
+		b.finish(w, state, oauthResult{Message: "Could not store the credential: " + err.Error()})
 		return
 	}
 	// Name the account right away so settings shows it before the first
 	// collection. The collector re-reads it against the token fingerprint.
-	if account, err := b.userInfo(ctx, access); err == nil {
+	if infoErr == nil {
 		if raw, err := json.Marshal(account); err == nil {
-			_ = b.store.Set(ctx, fmt.Sprintf("antigravity_account_%d", p.slot), string(raw))
+			_ = b.store.Set(ctx, fmt.Sprintf("antigravity_account_%d", slot), string(raw))
 		}
 	} else {
-		b.log.Printf("oauth: slot %d: cannot read who signed in: %v", p.slot, err)
+		_ = b.store.Delete(ctx, fmt.Sprintf("antigravity_account_%d", slot))
 	}
 	b.engine.ResetCooldown("antigravity")
 	// Collect right away: the next scheduled pass is minutes away, and until
 	// it runs the account cache still lists only the old identities.
 	go b.engine.RunOnce(context.Background(), "antigravity", true)
-	b.log.Println("oauth: Antigravity account connected")
-	renderCallback(w, true, "Account connected. You can close this tab and return to Gauge in the menu bar.")
+	b.log.Printf("oauth: Antigravity account connected to slot %d", slot)
+	b.finish(w, state, oauthResult{OK: true, Slot: slot, Email: account.Email,
+		Message: note + " You can close this tab and return to Gauge in the menu bar."})
+}
+
+// signInEmail is the account stored for a slot's sign-in.
+func signInEmail(ctx context.Context, st *store.Store, slot int) string {
+	raw, ok, err := st.Get(ctx, fmt.Sprintf("antigravity_account_%d", slot))
+	if err != nil || !ok {
+		return ""
+	}
+	var a model.Account
+	_ = json.Unmarshal([]byte(raw), &a)
+	return a.Email
+}
+
+// placeSignIn picks the slot a new sign-in lands in. An account Gauge already
+// shows keeps its slot, so signing in again refreshes it instead of adding a
+// copy; the IDE's own account always becomes slot 1's fallback. Anything else
+// takes the slot the user asked for.
+func placeSignIn(ctx context.Context, st *store.Store, asked int, email string) (int, string) {
+	if slot := providers.AntigravitySlotFor(ctx, st, email); slot > 0 {
+		switch {
+		case slot == 1 && asked != 1:
+			note := fmt.Sprintf("%s is the account the Antigravity IDE uses, so it was saved as that account's sign-in for when the IDE is closed.", email)
+			if prev := signInEmail(ctx, st, 1); prev != "" && !strings.EqualFold(prev, email) {
+				note += fmt.Sprintf(" It replaces the sign-in for %s.", prev)
+			}
+			return 1, note
+		case slot != asked:
+			return slot, fmt.Sprintf("%s was already connected as account %d; its sign-in was renewed there.", email, slot)
+		}
+		return slot, fmt.Sprintf("%s was signed in again.", email)
+	}
+	if asked == 1 {
+		if ide := providers.AntigravityIDEEmail(ctx, st); ide != "" && email != "" && !strings.EqualFold(ide, email) {
+			return 1, fmt.Sprintf("Connected %s. The IDE uses %s, so this sign-in is only read while the IDE is closed.", email, ide)
+		}
+	}
+	if email == "" {
+		return asked, "Account connected."
+	}
+	return asked, fmt.Sprintf("Connected %s.", email)
 }
 
 // exchange trades the authorization code for a refresh token.
